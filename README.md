@@ -1,4 +1,4 @@
-# Job Bot 🤖
+# Job Bot
 
 Automated job application system using Playwright browser automation.
 
@@ -13,17 +13,17 @@ Currently testing LinkedIn automation fundamentals before building the full appl
   - Locator strategy testing (5 methods compared)
   - Best practices documented
   
-- ⏳ **v0.1** (Week 4): Basic job scraping
+-  **v0.1** (Week 4): Basic job scraping
   - Scrape 50+ jobs from Indeed
   - Extract: title, company, location, description
   - Save to CSV/database
   
-- ⏳ **v0.2** (Week 5): Easy Apply automation
+-  **v0.2** (Week 5): Easy Apply automation
   - Auto-fill application forms
   - Resume upload
   - Track applications
   
-- ⏳ **v1.0** (Week 6): Multi-platform + AI filtering
+-  **v1.0** (Week 6): Multi-platform + AI filtering
   - LinkedIn + Indeed + Greenhouse
   - AI filters jobs by fit score
   - Daily application reports
@@ -84,15 +84,6 @@ job-bot/
 
 ## Documentation
 
-Full testing documentation and lessons learned: [Link to Obsidian docs when published]
-
-## Timeline
-
-- **Week 1** (Jan 5-11): Testing & learning Playwright
-- **Week 4** (Jan 26-Feb 1): Build v0.1 (scraping)
-- **Week 5** (Feb 2-8): Build v0.2 (automation)
-- **Week 6** (Feb 9-15): Ship v1.0 (multi-platform)
+Full testing documentation and lessons learned: [Link to documentation using Obsidian will be available soon]
 
 ---
-
-*Built as part of systematic tech skill progression from bus driver → remote contractor*
