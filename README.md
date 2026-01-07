@@ -1,89 +1,86 @@
 # Job Bot
 
-Automated job application system using Playwright browser automation.
+Automated job applications using Playwright. Testing phase - v0.1 ships Week 4.
 
-## Status: v0.0 (Testing Phase)
+## Status: v0.0 (Testing)
 
-Currently testing LinkedIn automation fundamentals before building the full application bot.
+Currently testing LinkedIn scraping fundamentals. Session management works, locator strategies identified.
 
 ## Roadmap
 
-- ✅ **v0.0** (Week 1, Jan 2026): Playwright testing foundation
-  - Session management (login persistence)
-  - Locator strategy testing (5 methods compared)
-  - Best practices documented
-  
--  **v0.1** (Week 4): Basic job scraping
-  - Scrape 50+ jobs from Indeed
-  - Extract: title, company, location, description
-  - Save to CSV/database
-  
--  **v0.2** (Week 5): Easy Apply automation
-  - Auto-fill application forms
-  - Resume upload
-  - Track applications
-  
--  **v1.0** (Week 6): Multi-platform + AI filtering
-  - LinkedIn + Indeed + Greenhouse
-  - AI filters jobs by fit score
-  - Daily application reports
+**v0.0 (Week 1)**
+- Playwright session management (login persistence via cookies)
+- Tested 5 locator methods (get_by_role wins)
+- Documented best practices
 
-## Current Progress (v0.0)
+**v0.1 (Week 4)**
+- Scrape 50+ jobs from Indeed
+- Extract: title, company, location, description
+- CSV export
 
-### What's Been Tested
+**v0.2 (Week 5)**
+- Easy Apply automation (form filling, resume upload)
+- Application tracking
+
+**v1.0 (Week 6)**
+- Multi-platform (LinkedIn, Indeed, Greenhouse)
+- AI job filtering (fit score)
+- Daily reports
+
+## What's Working (v0.0)
 
 **Session Management:**
-- Login cookies saved to JSON
-- Persistent sessions across runs
-- No re-login required
+- Saves login cookies to JSON
+- No re-login needed across runs
+- Bypasses rate limits
 
-**Locator Strategies:**
-Tested 5 different methods for finding "Easy Apply" button:
-1. ✅ `get_by_role` - Most reliable (1 exact match)
-2. ✅ `get_by_text` - Good fallback (4 matches)
-3. ✅ CSS selectors - Works (3 matches)
-4. ✅ XPath - Functional but fragile
-5. ❌ Class names - Too brittle (LinkedIn changes frequently)
+**Locator Testing Results:**
+- `get_by_role`: 1 exact match (most reliable)
+- `get_by_text`: 4 matches (good fallback)
+- CSS selectors: 3 matches (works)
+- XPath: functional but fragile
+- Class names: breaks on UI updates (avoid)
 
-**Key Findings:**
-- `get_by_role` is most stable for production use
-- `wait_until="domcontentloaded"` best for React apps
-- Session management prevents rate limiting
+**Key Learnings:**
+- `get_by_role` is production-ready
+- `wait_until="domcontentloaded"` for React apps
+- Never use `time.sleep()` with Playwright
 
 ## Tech Stack
 
-- **Python 3.x**
-- **Playwright** - Browser automation
-- **Ollama + DeepSeek** (future) - AI job filtering
+- Python 3.x
+- Playwright (browser automation)
+- Ollama + DeepSeek (AI filtering, coming v0.2)
 
-## Installation
+## Setup
 ```bash
-# Clone repo
 git clone https://github.com/taxman-dev/job-bot.git
 cd job-bot
 
-# Install dependencies
 pip install playwright
 playwright install chromium
 
-# Run tests
+# Test session management
 python tests/linkedin_login.py
+
+# Test locators
 python tests/linkedn-locater-test.py
 ```
 
-## Project Structure
+## Structure
 ```
-job-bot/
-├── tests/               # v0.0 testing scripts
-│   ├── linkedin_login.py
-│   └── linkedn-locater-test.py
-├── src/                 # v0.1+ production code (coming Week 4)
-├── docs/                # Documentation
-└── README.md
-```
+├job-bot
+│   ├ docs
+│   ├ README.md
+│   ├ src
+│   └ tests
+│       ├─linkedin_session.json (ignored)
+│       ├─linkedn-locater-test.py
+│       └─linkedn-test.py
+
 
 ## Documentation
 
-Full testing documentation and lessons learned: [Link to documentation using Obsidian will be available soon]
+Full testing notes in `docs/` (Playwright patterns, session management, locator strategies).
 
----
+
