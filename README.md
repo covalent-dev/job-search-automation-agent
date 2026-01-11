@@ -56,21 +56,42 @@ Currently testing browser automation fundamentals. Session management works, loc
 git clone https://github.com/covalent-dev/job-search-automation.git
 cd job-search-automation
 
-pip install playwright pyyaml pydantic
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 playwright install chromium
+
+# First time: Setup session (solve captcha once)
+python src/setup_session.py
 
 # Run the bot
 python src/main.py
 ```
 
+## Session Management
+
+Job sites use Cloudflare protection. Run `setup_session.py` first to:
+1. Open a browser window
+2. Solve the captcha manually
+3. Save the session cookies
+
+After setup, `main.py` reuses the saved session to bypass captcha.
+
 ## Structure
 ```
 job-search-automation/
 ├── config/
-│   └── settings.yaml
+│   ├── settings.yaml
+│   └── session.json      # Saved after setup (gitignored)
 ├── src/
 │   ├── __init__.py
 │   ├── main.py
+│   ├── setup_session.py  # Run once to save session
+│   ├── collector.py
+│   ├── output_writer.py
 │   ├── models.py
 │   └── config_loader.py
 ├── output/

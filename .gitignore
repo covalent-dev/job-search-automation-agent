@@ -1,1 +1,22 @@
+# OS
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Session (contains cookies - don't commit)
+config/session.json
+# Browser profile is stored in ~/.job-search-automation/
+
+# Output (generated files)
+output/
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp

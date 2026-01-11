@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 
 """
-Job Bot - Main Entry Point
-Automated job search and application system
+Job Search Automation - Main Entry Point
+Automated job search and collection system
 """
 
 import logging
+import sys
 from pathlib import Path
 from datetime import datetime
 from config_loader import load_config
 from models import SearchQuery, SearchResults
+from collector import JobCollector
+from output_writer import OutputWriter
 
 
 def setup_logging(config) -> None:
     """Configure logging for the application"""
     log_file = config.get_log_file()
     log_file.parent.mkdir(exist_ok=True)
-    
+
     log_level = getattr(logging, config.get_log_level(), logging.INFO)
-    
+
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -27,7 +30,7 @@ def setup_logging(config) -> None:
             logging.StreamHandler()
         ]
     )
-    
+
     logger = logging.getLogger(__name__)
     logger.info(f"Logging initialized: {log_file}")
 
@@ -35,38 +38,37 @@ def setup_logging(config) -> None:
 def display_config(config) -> None:
     """Display loaded configuration"""
     logger = logging.getLogger(__name__)
-    
+
     print("\n" + "="*60)
-    print("🤖 JOB BOT v0.1 - Configuration Loaded")
+    print("🤖 JOB SEARCH AUTOMATION v0.1")
     print("="*60)
-    
+
     print("\n📋 SEARCH PARAMETERS:")
     keywords = config.get_keywords()
     for i, keyword in enumerate(keywords, 1):
         print(f"  {i}. {keyword}")
-    
+
     print(f"\n📍 Location: {config.get_location()}")
     print(f"📊 Max results per search: {config.get_max_results()}")
-    print(f"🌐 Job boards: {', '.join(config.get_job_boards())}")
-    
+
     print(f"\n⚙️  BROWSER SETTINGS:")
     print(f"  Headless mode: {config.is_headless()}")
     print(f"  Delay range: {config.get_min_delay()}s - {config.get_max_delay()}s")
     print(f"  Page timeout: {config.get_page_timeout()/1000}s")
-    
+
     print(f"\n💾 OUTPUT:")
     print(f"  JSON: {config.get_output_path('json')}")
     print(f"  Markdown: {config.get_output_path('markdown')}")
-    
+
     print(f"\n🤖 AI FILTER:")
     if config.is_ai_enabled():
         print(f"  ✓ Enabled")
         print(f"  Model: {config.get_ai_model()}")
     else:
-        print(f"  ✗ Disabled (enable in Phase 5)")
-    
+        print(f"  ✗ Disabled")
+
     print("\n" + "="*60 + "\n")
-    
+
     logger.info(f"Config validated: {len(keywords)} search queries configured")
 
 
@@ -76,7 +78,7 @@ def create_search_queries(config) -> list[SearchQuery]:
     keywords = config.get_keywords()
     location = config.get_location()
     max_results = config.get_max_results()
-    
+
     for keyword in keywords:
         query = SearchQuery(
             keyword=keyword,
@@ -85,45 +87,66 @@ def create_search_queries(config) -> list[SearchQuery]:
             job_board="target-site"
         )
         queries.append(query)
-    
+
     return queries
 
 
 def main():
     """Main execution function"""
-    print("\n🚀 Starting Job Bot...")
-    
+    print("\n🚀 Starting Job Search Automation...")
+
     # Load configuration
     try:
         config = load_config()
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
         print("Make sure config/settings.yaml exists!")
-        return
+        return 1
     except Exception as e:
         print(f"❌ Error loading config: {e}")
-        return
-    
+        return 1
+
     # Setup logging
     setup_logging(config)
     logger = logging.getLogger(__name__)
-    
+
     # Display configuration
     display_config(config)
-    
+
     # Create search queries
     queries = create_search_queries(config)
     logger.info(f"Created {len(queries)} search queries")
-    
+
     print("📝 SEARCH QUERIES:")
     for i, query in enumerate(queries, 1):
         print(f"  {i}. {query}")
-    
-    print("\n✅ Phase 1 Complete: Foundation & Config")
-    print("📦 Ready for Phase 2: Site Connection\n")
-    
-    logger.info("Phase 1 complete - configuration validated successfully")
+
+    # Collect jobs
+    collector = JobCollector(config)
+    jobs = collector.collect_all(queries)
+
+    if not jobs:
+        print("\n⚠️  No jobs collected. Check your search parameters or try again later.")
+        logger.warning("No jobs collected")
+        return 0
+
+    # Write output
+    writer = OutputWriter(config)
+    output_files = writer.write_all(jobs, queries)
+
+    # Summary
+    print("\n" + "="*60)
+    print("✅ JOB SEARCH COMPLETE")
+    print("="*60)
+    print(f"\n📊 Results: {len(jobs)} jobs collected")
+    print(f"📁 Files:")
+    print(f"   JSON: {output_files['json']}")
+    print(f"   Markdown: {output_files['markdown']}")
+    print("\n" + "="*60 + "\n")
+
+    logger.info(f"Job search complete: {len(jobs)} jobs saved")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
