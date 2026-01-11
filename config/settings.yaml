@@ -1,0 +1,59 @@
+# Job Bot Configuration v0.1
+# Search parameters for automated job hunting
+
+search:
+  # Job search keywords - will search for each separately
+  keywords:
+    - "remote python developer"
+    - "remote linux administrator"
+  
+  # Primary location filter
+  location: "Remote"
+  
+  # Maximum results to collect per keyword search
+  max_results_per_search: 50
+  
+  # Job boards to search (only Indeed for v0.1)
+  job_boards:
+    - "Indeed"
+
+# Output settings
+output:
+  # Where to save results
+  json_file: "output/jobs_{timestamp}.json"
+  markdown_file: "output/jobs_{timestamp}.md"
+  
+  # Include timestamp in filenames (true/false)
+  use_timestamp: true
+
+# Browser behavior
+browser:
+  # Headless mode (true = invisible browser, false = see what's happening)
+  headless: false
+  
+  # Delays to appear more human-like (in seconds)
+  min_delay: 0.5
+  max_delay: 2.0
+  
+  # Browser timeout (seconds)
+  page_timeout: 30
+
+# AI Filtering (bonus feature - Phase 5)
+ai_filter:
+  # Enable AI scoring (requires local LLM)
+  enabled: false
+  
+  # Model to use (Ollama)
+  model: "deepseek-coder-v2:latest"
+  
+  # Prompt for scoring
+  scoring_prompt: |
+    Analyze this job description and rate it 1-10 for junior-friendliness.
+    Consider: remote work, entry-level requirements, training mentioned.
+    Job: {description}
+    Rating (1-10):
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/job_bot_{timestamp}.log"

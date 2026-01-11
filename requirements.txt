@@ -1,0 +1,21 @@
+# Job Bot Dependencies
+
+# Core automation
+
+
+playwright>=1.40.0
+playwright-stealth>=1.0.6
+
+# Data handling
+
+
+pyyaml>=6.0
+pydantic>=2.5.0
+
+# AI/LLM (for Phase 5)
+
+ollama>=0.1.0
+
+# Utilities
+
+python-dateutil>=2.8.0

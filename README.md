@@ -1,29 +1,29 @@
-# Job Bot
+# Job Search Automation
 
-Automated job applications using Playwright. Testing phase - v0.1 ships Week 4.
+Automated job search and aggregation using Playwright. Testing phase - v0.1 ships Week 4.
 
 ## Status: v0.0 (Testing)
 
-Currently testing LinkedIn scraping fundamentals. Session management works, locator strategies identified.
+Currently testing browser automation fundamentals. Session management works, locator strategies identified.
 
 ## Roadmap
 
 **v0.0 (Week 1)**
-- Playwright session management (login persistence via cookies)
+- Playwright session management
 - Tested 5 locator methods (get_by_role wins)
 - Documented best practices
 
 **v0.1 (Week 4)**
-- Scrape 50+ jobs from Indeed
+- Collect 50+ jobs from Indeed
 - Extract: title, company, location, description
-- CSV export
+- JSON/Markdown export
 
 **v0.2 (Week 5)**
 - Easy Apply automation (form filling, resume upload)
 - Application tracking
 
 **v1.0 (Week 6)**
-- Multi-platform (LinkedIn, Indeed, Greenhouse)
+- Multi-platform support
 - AI job filtering (fit score)
 - Daily reports
 
@@ -32,7 +32,6 @@ Currently testing LinkedIn scraping fundamentals. Session management works, loca
 **Session Management:**
 - Saves login cookies to JSON
 - No re-login needed across runs
-- Bypasses rate limits
 
 **Locator Testing Results:**
 - `get_by_role`: 1 exact match (most reliable)
@@ -54,33 +53,34 @@ Currently testing LinkedIn scraping fundamentals. Session management works, loca
 
 ## Setup
 ```bash
-git clone https://github.com/taxman-dev/job-bot.git
-cd job-bot
+git clone https://github.com/covalent-dev/job-search-automation.git
+cd job-search-automation
 
-pip install playwright
+pip install playwright pyyaml pydantic
 playwright install chromium
 
-# Test session management
-python tests/linkedin_login.py
-
-# Test locators
-python tests/linkedn-locater-test.py
+# Run the bot
+python src/main.py
 ```
 
 ## Structure
 ```
-├job-bot
-│   ├ docs
-│   ├ README.md
-│   ├ src
-│   └ tests
-│       ├─linkedin_session.json (ignored)
-│       ├─linkedn-locater-test.py
-│       └─linkedn-test.py
+job-search-automation/
+├── config/
+│   └── settings.yaml
+├── src/
+│   ├── main.py
+│   ├── models.py
+│   └── config_loader.py
+├── output/
+├── logs/
+└── README.md
+```
 
+## Configuration
 
-## Documentation
-
-Full testing notes in `docs/` (Playwright patterns, session management, locator strategies).
-
-
+Edit `config/settings.yaml` to customize:
+- Search keywords and location
+- Output file paths
+- Browser behavior (headless mode, delays)
+- AI filtering options (Phase 5)
