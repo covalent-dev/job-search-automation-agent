@@ -82,7 +82,7 @@ def create_search_queries(config) -> list[SearchQuery]:
             keyword=keyword,
             location=location,
             max_results=max_results,
-            job_board="Indeed"
+            job_board="target-site"
         )
         queries.append(query)
     
@@ -120,7 +120,7 @@ def main():
         print(f"  {i}. {query}")
     
     print("\n✅ Phase 1 Complete: Foundation & Config")
-    print("📦 Ready for Phase 2: Indeed Connection\n")
+    print("📦 Ready for Phase 2: Site Connection\n")
     
     logger.info("Phase 1 complete - configuration validated successfully")
 

@@ -13,9 +13,9 @@ search:
   # Maximum results to collect per keyword search
   max_results_per_search: 50
   
-  # Job boards to search (only Indeed for v0.1)
+  # Job boards to search
   job_boards:
-    - "Indeed"
+    - "target-site"
 
 # Output settings
 output:

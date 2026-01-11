@@ -19,7 +19,7 @@ class Job(BaseModel):
     salary: Optional[str] = None
     
     # Metadata
-    source: str = "Indeed"  # Which job board
+    source: str = "target-site"  # Which job board
     date_posted: Optional[str] = None
     collected_at: datetime = Field(default_factory=datetime.now)
     
@@ -42,7 +42,7 @@ class SearchQuery(BaseModel):
     keyword: str
     location: str
     max_results: int = 50
-    job_board: str = "Indeed"
+    job_board: str = "target-site"
     
     def __str__(self) -> str:
         return f"'{self.keyword}' in {self.location}"

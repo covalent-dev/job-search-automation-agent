@@ -14,7 +14,7 @@ Currently testing browser automation fundamentals. Session management works, loc
 - Documented best practices
 
 **v0.1 (Week 4)**
-- Collect 50+ jobs from Indeed
+- Collect 50+ jobs from target sites
 - Extract: title, company, location, description
 - JSON/Markdown export
 
@@ -69,11 +69,13 @@ job-search-automation/
 ├── config/
 │   └── settings.yaml
 ├── src/
+│   ├── __init__.py
 │   ├── main.py
 │   ├── models.py
 │   └── config_loader.py
 ├── output/
 ├── logs/
+├── requirements.txt
 └── README.md
 ```
 

@@ -63,7 +63,7 @@ class ConfigLoader:
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""
-        return self.get('search.job_boards', ['Indeed'])
+        return self.get('search.job_boards', ['target-site'])
     
     # === Output Config ===
     
