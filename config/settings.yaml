@@ -22,9 +22,14 @@ output:
   # Where to save results
   json_file: "output/jobs_{timestamp}.json"
   markdown_file: "output/jobs_{timestamp}.md"
-  
+
   # Include timestamp in filenames (true/false)
   use_timestamp: true
+
+  # Obsidian vault sync (optional - copies output to vault)
+  vault_sync:
+    enabled: true
+    vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data"
 
 # Browser behavior
 browser:

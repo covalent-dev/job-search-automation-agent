@@ -109,8 +109,19 @@ class ConfigLoader:
         """Get AI scoring prompt template"""
         return self.get('ai_filter.scoring_prompt', '')
     
+    # === Vault Sync Config ===
+
+    def is_vault_sync_enabled(self) -> bool:
+        """Check if Obsidian vault sync is enabled"""
+        return self.get('output.vault_sync.enabled', False)
+
+    def get_vault_path(self) -> Path:
+        """Get Obsidian vault path for syncing output"""
+        path = self.get('output.vault_sync.vault_path', '')
+        return Path(path) if path else None
+
     # === Logging Config ===
-    
+
     def get_log_level(self) -> str:
         """Get logging level"""
         return self.get('logging.level', 'INFO')

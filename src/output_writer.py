@@ -3,6 +3,7 @@ Output Writer - Exports job data to JSON and Markdown
 """
 
 import json
+import shutil
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -97,9 +98,32 @@ class OutputWriter:
         print(f"📝 Markdown saved: {output_path}")
         return output_path
 
+    def sync_to_vault(self, files: dict) -> None:
+        """Copy output files to Obsidian vault if enabled"""
+        if not self.config.is_vault_sync_enabled():
+            return
+
+        vault_path = self.config.get_vault_path()
+        if not vault_path:
+            logger.warning("Vault sync enabled but no vault_path configured")
+            return
+
+        vault_path.mkdir(parents=True, exist_ok=True)
+
+        for file_type, source_path in files.items():
+            if source_path and source_path.exists():
+                dest_path = vault_path / source_path.name
+                shutil.copy2(source_path, dest_path)
+                logger.info(f"Synced to vault: {dest_path}")
+                print(f"📁 Synced to Obsidian: {dest_path}")
+
     def write_all(self, jobs: List[Job], queries: List[SearchQuery]) -> dict:
-        """Write all output formats"""
-        return {
+        """Write all output formats and sync to vault"""
+        files = {
             'json': self.write_json(jobs, queries),
             'markdown': self.write_markdown(jobs, queries)
         }
+
+        self.sync_to_vault(files)
+
+        return files
