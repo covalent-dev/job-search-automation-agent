@@ -12,6 +12,8 @@ from datetime import datetime
 from config_loader import load_config
 from models import SearchQuery, SearchResults
 from collector import JobCollector
+from ai_scorer import AIScorer
+from dedupe_store import DedupeStore
 from output_writer import OutputWriter
 
 
@@ -129,6 +131,24 @@ def main():
         print("\n⚠️  No jobs collected. Check your search parameters or try again later.")
         logger.warning("No jobs collected")
         return 0
+
+    # Cross-run dedupe
+    if config.is_dedupe_enabled():
+        dedupe_path = config.get_dedupe_path()
+        if dedupe_path:
+            store = DedupeStore(dedupe_path)
+            before_count = len(jobs)
+            jobs, duplicates = store.filter_new(jobs)
+            store.record(jobs)
+            removed = before_count - len(jobs)
+            print(f"🧹 Cross-run dedupe: {removed} duplicates removed")
+            logger.info("Cross-run dedupe removed %s jobs", removed)
+
+    # AI scoring
+    if config.is_ai_enabled():
+        print("🤖 AI scoring enabled: ranking jobs...")
+        scorer = AIScorer(config)
+        scorer.score_jobs(jobs)
 
     # Write output
     writer = OutputWriter(config)

@@ -4,9 +4,9 @@
 Session Setup - Uses persistent Chrome profile for better captcha bypass
 """
 
-import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from config_loader import load_config
 
 # Use a persistent browser profile directory
 USER_DATA_DIR = Path.home() / ".job-search-automation" / "browser-profile"
@@ -29,12 +29,24 @@ def setup_session():
     # Create profile directory
     USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+    config = load_config()
+    channel = config.get_browser_channel() or None
+    executable_path = config.get_browser_executable_path() or None
+    launch_timeout = config.get_launch_timeout()
+
+    if executable_path and not Path(executable_path).exists():
+        print(f"⚠️  Browser executable not found: {executable_path}")
+        executable_path = None
+
     with sync_playwright() as p:
         # Launch with persistent context (like a real Chrome profile)
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(USER_DATA_DIR),
             headless=False,
             viewport={"width": 1280, "height": 800},
+            channel=channel,
+            executable_path=executable_path,
+            timeout=launch_timeout,
             # Use default Chrome user agent (more natural)
             args=[
                 "--disable-blink-features=AutomationControlled",

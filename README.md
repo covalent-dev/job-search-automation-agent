@@ -79,6 +79,7 @@ Job sites use Cloudflare protection. Run `setup_session.py` first to:
 3. Save the session cookies
 
 After setup, `main.py` reuses the saved session to bypass captcha.
+Note: Playwright may open an extra `about:blank` tab for automation control. Leave it open during runs.
 
 ## Structure
 ```
@@ -106,4 +107,5 @@ Edit `config/settings.yaml` to customize:
 - Search keywords and location
 - Output file paths
 - Browser behavior (headless mode, delays)
-- AI filtering options (Phase 5)
+- AI scoring options (Ollama)
+- Cross-run de-duplication log

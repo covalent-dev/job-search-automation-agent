@@ -28,6 +28,7 @@ class JobCollector:
         self.page: Optional[Page] = None
         self.session_file = SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
+        self.max_retries = self.config.get_max_retries()
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -43,10 +44,43 @@ class JobCollector:
         location = query.location.replace(" ", "+")
         return f"https://www.indeed.com/jobs?q={keyword}&l={location}"
 
+    def _extract_text(self, element) -> str:
+        if not element:
+            return ""
+        try:
+            text = element.inner_text().strip()
+        except Exception:
+            text = ""
+        if not text:
+            try:
+                text = (element.text_content() or "").strip()
+            except Exception:
+                text = ""
+        return text
+
+
+    def _safe_goto(self, url: str) -> bool:
+        """Navigate with retry for flaky pages."""
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                self.page.goto(url, wait_until="domcontentloaded")
+                return True
+            except Exception as exc:
+                logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
+                self._random_delay()
+        return False
+
     def start_browser(self) -> None:
         """Initialize Playwright browser with persistent profile"""
         logger.info("Starting browser...")
         self.playwright = sync_playwright().start()
+        channel = self.config.get_browser_channel() or None
+        executable_path = self.config.get_browser_executable_path() or None
+        launch_timeout = self.config.get_launch_timeout()
+
+        if executable_path and not Path(executable_path).exists():
+            logger.warning("Browser executable not found: %s", executable_path)
+            executable_path = None
 
         # Check if persistent profile exists (preferred method)
         if self.user_data_dir.exists():
@@ -58,14 +92,20 @@ class JobCollector:
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--disable-dev-shm-usage",
-                ]
+                ],
+                channel=channel,
+                executable_path=executable_path,
+                timeout=launch_timeout,
             )
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
             # Fallback to session file or new context
             logger.info("No persistent profile found, using regular context")
             self.browser = self.playwright.chromium.launch(
-                headless=self.config.is_headless()
+                headless=self.config.is_headless(),
+                channel=channel,
+                executable_path=executable_path,
+                timeout=launch_timeout,
             )
 
             if self.session_file.exists():
@@ -83,6 +123,16 @@ class JobCollector:
             self.page = self.context.new_page()
 
         self.page.set_default_timeout(self.config.get_page_timeout())
+        self.page.set_default_navigation_timeout(self.config.get_navigation_timeout())
+
+        if self.config.use_stealth():
+            try:
+                from playwright_stealth.stealth import Stealth
+                Stealth().apply_stealth_sync(self.page)
+                logger.info("Playwright stealth enabled")
+            except Exception as exc:
+                logger.warning("Failed to enable stealth mode: %s", exc)
+
         logger.info("Browser started successfully")
 
     def stop_browser(self) -> None:
@@ -105,7 +155,10 @@ class JobCollector:
 
         try:
             # Navigate to search results
-            self.page.goto(url, wait_until="domcontentloaded")
+            if not self._safe_goto(url):
+                logger.warning("Failed to load search page after retries")
+                print("   ✗ Failed to load search page")
+                return jobs
             self._random_delay()
 
             # Try multiple selectors (Indeed changes these frequently)
@@ -118,12 +171,14 @@ class JobCollector:
             ]
 
             job_cards = []
+            matched_selector = None
             for selector in selectors:
                 try:
                     self.page.wait_for_selector(selector, timeout=5000)
                     job_cards = self.page.query_selector_all(selector)
                     if job_cards:
                         logger.info(f"Found jobs using selector: {selector}")
+                        matched_selector = selector
                         break
                 except:
                     continue
@@ -134,6 +189,11 @@ class JobCollector:
                 logger.warning("No job cards found with any selector")
                 print(f"   ⚠️  No job cards found - saved debug screenshot")
                 return jobs
+
+            try:
+                self.page.wait_for_selector(".job-snippet", timeout=3000)
+            except Exception:
+                pass
 
             logger.info(f"Found {len(job_cards)} job cards")
             print(f"   Found {len(job_cards)} listings")

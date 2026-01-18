@@ -94,6 +94,30 @@ class ConfigLoader:
     def get_page_timeout(self) -> int:
         """Get page load timeout in milliseconds"""
         return self.get('browser.page_timeout', 30) * 1000
+
+    def get_navigation_timeout(self) -> int:
+        """Get navigation timeout in milliseconds"""
+        return self.get('browser.navigation_timeout', 45) * 1000
+
+    def get_launch_timeout(self) -> int:
+        """Get browser launch timeout in milliseconds"""
+        return self.get('browser.launch_timeout', 60) * 1000
+
+    def get_max_retries(self) -> int:
+        """Get max retries for navigation/extraction"""
+        return int(self.get('browser.max_retries', 2))
+
+    def get_browser_channel(self) -> str:
+        """Get Playwright browser channel override"""
+        return self.get('browser.channel', '')
+
+    def get_browser_executable_path(self) -> str:
+        """Get browser executable path override"""
+        return self.get('browser.executable_path', '')
+
+    def use_stealth(self) -> bool:
+        """Check if Playwright stealth should be enabled"""
+        return self.get('browser.use_stealth', False)
     
     # === AI Config ===
     
@@ -108,6 +132,33 @@ class ConfigLoader:
     def get_ai_prompt(self) -> str:
         """Get AI scoring prompt template"""
         return self.get('ai_filter.scoring_prompt', '')
+
+    def get_ai_max_retries(self) -> int:
+        """Get max retries for AI scoring calls"""
+        return int(self.get('ai_filter.max_retries', 2))
+
+    def get_ai_max_reasoning_chars(self) -> int:
+        """Get max characters to keep for AI reasoning"""
+        return int(self.get('ai_filter.max_reasoning_chars', 400))
+
+    def get_ai_debug(self) -> bool:
+        """Check if AI debug logging is enabled"""
+        return bool(self.get('ai_filter.debug', False))
+
+    def is_ai_reasoning_enabled(self) -> bool:
+        """Check if AI reasoning should be included"""
+        return bool(self.get('ai_filter.include_reasoning', True))
+
+    # === Dedupe Config ===
+
+    def is_dedupe_enabled(self) -> bool:
+        """Check if cross-run dedupe is enabled"""
+        return self.get('dedupe.enabled', False)
+
+    def get_dedupe_path(self) -> Path:
+        """Get dedupe hash log path"""
+        path = self.get('dedupe.hash_file', '')
+        return Path(path) if path else None
     
     # === Vault Sync Config ===
 
