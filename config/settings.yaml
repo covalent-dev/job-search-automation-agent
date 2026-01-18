@@ -4,8 +4,18 @@
 search:
   # Job search keywords - will search for each separately
   keywords:
-    - "remote python developer"
-    - "remote linux administrator"
+    - "AI engineer"
+    - "AI/ML engineer"
+    - "machine learning engineer"
+    - "AI systems engineer"
+    - "AI infrastructure engineer"
+    - "AI platform engineer"
+    - "MLOps engineer"
+    - "LLM engineer"
+    - "LLM ops engineer"
+    - "RAG engineer"
+    - "generative AI engineer"
+    - "AI automation engineer"
   
   # Primary location filter
   location: "Remote"

@@ -6,27 +6,6 @@ Automated job search and aggregation using Playwright. Testing phase - v0.1 ship
 
 Currently testing browser automation fundamentals. Session management works, locator strategies identified.
 
-## Roadmap
-
-**v0.0 (Week 1)**
-- Playwright session management
-- Tested 5 locator methods (get_by_role wins)
-- Documented best practices
-
-**v0.1 (Week 4)**
-- Collect 50+ jobs from target sites
-- Extract: title, company, location, description
-- JSON/Markdown export
-
-**v0.2 (Week 5)**
-- Easy Apply automation (form filling, resume upload)
-- Application tracking
-
-**v1.0 (Week 6)**
-- Multi-platform support
-- AI job filtering (fit score)
-- Daily reports
-
 ## What's Working (v0.0)
 
 **Session Management:**
@@ -44,6 +23,10 @@ Currently testing browser automation fundamentals. Session management works, loc
 - `get_by_role` is production-ready
 - `wait_until="domcontentloaded"` for React apps
 - Never use `time.sleep()` with Playwright
+
+**De-duplication:**
+- Cross-run dedupe via hash log
+- Within-run dedupe uses Indeed `jk` IDs when available
 
 ## Tech Stack
 

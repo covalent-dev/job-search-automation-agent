@@ -9,6 +9,7 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Tuple
+from urllib.parse import parse_qs, urlparse
 
 from models import Job
 
@@ -80,5 +81,20 @@ class DedupeStore:
             logger.warning("Failed to write dedupe log: %s", exc)
 
     def _hash_job(self, job: Job) -> str:
-        base = str(job.link) if job.link else f"{job.title}|{job.company}|{job.location}"
+        base = self._stable_key(job)
         return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+    def _stable_key(self, job: Job) -> str:
+        """Build a stable key that survives tracking URL changes."""
+        if job.link and job.source == "indeed":
+            parsed = urlparse(str(job.link))
+            query = parse_qs(parsed.query)
+            jk = query.get("jk", [None])[0]
+            if jk:
+                return f"indeed|{jk.strip()}"
+
+        title = (job.title or "").strip().lower()
+        company = (job.company or "").strip().lower()
+        location = (job.location or "").strip().lower()
+        source = (job.source or "").strip().lower()
+        return f"{source}|{title}|{company}|{location}"
