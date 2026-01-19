@@ -27,10 +27,12 @@ class JobCollector:
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        self.detail_salary_page: Optional[Page] = None
         self.session_file = SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
         self.max_retries = self.config.get_max_retries()
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
+        self.detail_salary_blocked = False
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -98,8 +100,25 @@ class JobCollector:
 
         return salary, job_type
 
+    def _is_captcha_page(self, page: Page) -> bool:
+        try:
+            title = (page.title() or "").lower()
+            if "additional verification required" in title or "cloudflare" in title:
+                return True
+            body = (page.inner_text("body") or "").lower()
+            captcha_markers = [
+                "additional verification required",
+                "verify you are human",
+                "cloudflare",
+            ]
+            return any(marker in body for marker in captcha_markers)
+        except Exception:
+            return False
+
     def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
         if not self.context or not url:
+            return None, None
+        if self.detail_salary_blocked:
             return None, None
 
         if url in self.detail_salary_cache:
@@ -107,23 +126,45 @@ class JobCollector:
 
         timeout_ms = self.config.get_detail_salary_timeout() * 1000
         retries = self.config.get_detail_salary_retries()
+        delay_min = self.config.get_detail_salary_delay_min()
+        delay_max = self.config.get_detail_salary_delay_max()
         selectors = [
             "[data-testid='jobsearch-JobInfoHeader-salary']",
             "[data-testid='salary-snippet']",
             ".salary-snippet",
             "section[aria-label='Job details']",
+            "[data-testid='jobDetailsSection']",
+            "#jobDetailsSection",
         ]
 
         salary = None
         job_type = None
 
         for attempt in range(1, retries + 1):
-            detail_page = None
             try:
-                detail_page = self.context.new_page()
-                detail_page.set_default_timeout(timeout_ms)
-                detail_page.set_default_navigation_timeout(timeout_ms)
+                if self.detail_salary_page is None:
+                    self.detail_salary_page = self.context.new_page()
+                    self.detail_salary_page.set_default_timeout(timeout_ms)
+                    self.detail_salary_page.set_default_navigation_timeout(timeout_ms)
+                detail_page = self.detail_salary_page
+                if delay_max > 0:
+                    delay_seconds = random.uniform(delay_min, delay_max)
+                    time.sleep(delay_seconds)
                 detail_page.goto(url, wait_until="domcontentloaded")
+                for selector in selectors:
+                    try:
+                        detail_page.wait_for_selector(selector, timeout=2000)
+                        break
+                    except Exception:
+                        continue
+                if self._is_captcha_page(detail_page):
+                    logger.warning("Detail salary fetch blocked by captcha; disabling detail fetches")
+                    try:
+                        detail_page.screenshot(path="output/detail_captcha.png")
+                    except Exception:
+                        pass
+                    self.detail_salary_blocked = True
+                    break
 
                 for selector in selectors:
                     element = detail_page.query_selector(selector)
@@ -140,23 +181,12 @@ class JobCollector:
                     if salary and job_type:
                         break
 
-                if not salary or not job_type:
-                    body_text = detail_page.inner_text("body")
-                    found_salary, found_job_type = self._classify_attribute_text(body_text)
-                    if found_salary and not salary:
-                        salary = found_salary
-                    if found_job_type and not job_type:
-                        job_type = found_job_type
-
                 if salary or job_type:
                     break
 
             except Exception as exc:
                 logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
                 self._random_delay()
-            finally:
-                if detail_page:
-                    detail_page.close()
 
         self.detail_salary_cache[url] = (salary, job_type)
         return salary, job_type
@@ -258,6 +288,8 @@ class JobCollector:
 
     def stop_browser(self) -> None:
         """Clean up browser resources"""
+        if self.detail_salary_page:
+            self.detail_salary_page.close()
         if self.context:
             self.context.close()
         if self.browser:
@@ -348,6 +380,12 @@ class JobCollector:
                                 and job.link
                                 and detail_fetches < max_detail_fetches
                             ):
+                                logger.info(
+                                    "Detail salary fetch %s/%s: %s",
+                                    detail_fetches + 1,
+                                    max_detail_fetches,
+                                    job.link,
+                                )
                                 detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
                                 if detail_salary:
                                     job.salary = detail_salary

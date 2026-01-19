@@ -28,9 +28,11 @@ search:
 
   # Detail page salary fetch (slower but more accurate)
   detail_salary_fetch: true
-  detail_salary_timeout: 5
+  detail_salary_timeout: 8
   detail_salary_retries: 1
   detail_salary_max_per_query: 10
+  detail_salary_delay_min: 2.0
+  detail_salary_delay_max: 4.0
   
   # Job boards to search
   job_boards:

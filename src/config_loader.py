@@ -80,6 +80,14 @@ class ConfigLoader:
     def get_detail_salary_max_per_query(self) -> int:
         """Get max detail salary fetches per query"""
         return int(self.get('search.detail_salary_max_per_query', 10))
+
+    def get_detail_salary_delay_min(self) -> float:
+        """Get minimum delay between detail salary fetches in seconds"""
+        return float(self.get('search.detail_salary_delay_min', 1.0))
+
+    def get_detail_salary_delay_max(self) -> float:
+        """Get maximum delay between detail salary fetches in seconds"""
+        return float(self.get('search.detail_salary_delay_max', 2.0))
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""
