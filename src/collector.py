@@ -3,6 +3,7 @@ Job Collector - Playwright-based job listing collector
 Handles browser automation and data extraction
 """
 
+import json
 import logging
 import os
 import random
@@ -33,6 +34,7 @@ class JobCollector:
         self.max_retries = self.config.get_max_retries()
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
         self.detail_salary_blocked = False
+        self.detail_debug_saved = False
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -100,6 +102,63 @@ class JobCollector:
 
         return salary, job_type
 
+    def _format_salary(self, currency: Optional[str], min_value: Optional[float],
+                       max_value: Optional[float], unit: Optional[str]) -> Optional[str]:
+        if min_value is None and max_value is None:
+            return None
+        currency_symbol = "$" if currency == "USD" else (currency or "")
+        if min_value is not None:
+            min_text = f"{currency_symbol}{int(min_value):,}"
+        else:
+            min_text = None
+        if max_value is not None:
+            max_text = f"{currency_symbol}{int(max_value):,}"
+        else:
+            max_text = None
+        if min_text and max_text:
+            salary = f"{min_text} - {max_text}"
+        else:
+            salary = min_text or max_text
+        if unit:
+            salary = f"{salary} {unit}"
+        return salary
+
+    def _extract_salary_from_json_ld(self, page: Page) -> tuple[Optional[str], Optional[str]]:
+        salary = None
+        job_type = None
+        for script in page.query_selector_all("script[type='application/ld+json']"):
+            raw = self._extract_text(script)
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                employment = item.get("employmentType")
+                if employment and not job_type:
+                    if isinstance(employment, list):
+                        job_type = ", ".join(employment)
+                    else:
+                        job_type = str(employment)
+                base_salary = item.get("baseSalary")
+                if not isinstance(base_salary, dict):
+                    continue
+                currency = base_salary.get("currency")
+                value = base_salary.get("value", {})
+                min_value = value.get("minValue")
+                max_value = value.get("maxValue")
+                unit = value.get("unitText")
+                formatted = self._format_salary(currency, min_value, max_value, unit)
+                if formatted and not salary:
+                    salary = formatted
+            if salary or job_type:
+                break
+        return salary, job_type
+
     def _is_captcha_page(self, page: Page) -> bool:
         try:
             title = (page.title() or "").lower()
@@ -128,10 +187,12 @@ class JobCollector:
         retries = self.config.get_detail_salary_retries()
         delay_min = self.config.get_detail_salary_delay_min()
         delay_max = self.config.get_detail_salary_delay_max()
-        selectors = [
+        salary_selectors = [
             "[data-testid='jobsearch-JobInfoHeader-salary']",
             "[data-testid='salary-snippet']",
             ".salary-snippet",
+        ]
+        detail_section_selectors = [
             "section[aria-label='Job details']",
             "[data-testid='jobDetailsSection']",
             "#jobDetailsSection",
@@ -151,7 +212,18 @@ class JobCollector:
                     delay_seconds = random.uniform(delay_min, delay_max)
                     time.sleep(delay_seconds)
                 detail_page.goto(url, wait_until="domcontentloaded")
-                for selector in selectors:
+                try:
+                    detail_page.wait_for_url("**/viewjob?jk=**", timeout=3000)
+                except Exception:
+                    pass
+                try:
+                    detail_page.wait_for_selector(
+                        "section[aria-label='Job details'], [data-testid='jobDetailsSection'], #jobDetailsSection",
+                        timeout=3000,
+                    )
+                except Exception:
+                    pass
+                for selector in salary_selectors + detail_section_selectors:
                     try:
                         detail_page.wait_for_selector(selector, timeout=2000)
                         break
@@ -166,13 +238,27 @@ class JobCollector:
                     self.detail_salary_blocked = True
                     break
 
-                for selector in selectors:
-                    element = detail_page.query_selector(selector)
-                    if not element:
-                        continue
-                    text = self._extract_text(element)
-                    if not text:
-                        continue
+                if not salary or not job_type:
+                    json_salary, json_job_type = self._extract_salary_from_json_ld(detail_page)
+                    if json_salary and not salary:
+                        salary = json_salary
+                    if json_job_type and not job_type:
+                        job_type = json_job_type
+
+                text_chunks = []
+                for selector in salary_selectors:
+                    for element in detail_page.query_selector_all(selector):
+                        text = self._extract_text(element)
+                        if text:
+                            text_chunks.append(text)
+
+                for selector in detail_section_selectors:
+                    for element in detail_page.query_selector_all(selector):
+                        text = self._extract_text(element)
+                        if text:
+                            text_chunks.append(text)
+
+                for text in text_chunks:
                     found_salary, found_job_type = self._classify_attribute_text(text)
                     if found_salary and not salary:
                         salary = found_salary
@@ -180,6 +266,17 @@ class JobCollector:
                         job_type = found_job_type
                     if salary and job_type:
                         break
+
+                if not salary and not self.detail_debug_saved:
+                    try:
+                        Path("output").mkdir(parents=True, exist_ok=True)
+                        detail_page.screenshot(path="output/detail_debug.png")
+                        Path("output/detail_debug.html").write_text(
+                            detail_page.content(), encoding="utf-8"
+                        )
+                        self.detail_debug_saved = True
+                    except Exception:
+                        pass
 
                 if salary or job_type:
                     break

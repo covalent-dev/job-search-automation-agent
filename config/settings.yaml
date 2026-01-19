@@ -24,7 +24,7 @@ search:
   max_results_per_search: 50
 
   # Max pages to paginate per keyword search (0 = unlimited, auto-stop)
-  max_pages: 0
+  max_pages: 2
 
   # Detail page salary fetch (slower but more accurate)
   detail_salary_fetch: true
