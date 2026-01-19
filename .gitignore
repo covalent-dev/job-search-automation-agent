@@ -16,6 +16,9 @@ config/session.json
 output/
 logs/
 
+# Scratch
+scratch/
+
 # IDE
 .idea/
 .vscode/

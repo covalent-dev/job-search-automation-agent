@@ -60,6 +60,10 @@ class ConfigLoader:
     def get_max_results(self) -> int:
         """Get max results per search"""
         return self.get('search.max_results_per_search', 50)
+
+    def get_max_pages(self) -> int:
+        """Get max pages to paginate per search"""
+        return int(self.get('search.max_pages', 1))
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""

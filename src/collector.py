@@ -7,6 +7,7 @@ import logging
 import os
 import random
 import time
+import re
 from pathlib import Path
 from typing import List, Optional
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
@@ -37,12 +38,15 @@ class JobCollector:
         delay = random.uniform(min_delay, max_delay)
         time.sleep(delay)
 
-    def _build_search_url(self, query: SearchQuery) -> str:
+    def _build_search_url(self, query: SearchQuery, start: int = 0) -> str:
         """Build search URL for job board"""
         # Indeed URL structure
         keyword = query.keyword.replace(" ", "+")
         location = query.location.replace(" ", "+")
-        return f"https://www.indeed.com/jobs?q={keyword}&l={location}"
+        base_url = f"https://www.indeed.com/jobs?q={keyword}&l={location}"
+        if start > 0:
+            return f"{base_url}&start={start}"
+        return base_url
 
     def _extract_text(self, element) -> str:
         if not element:
@@ -57,6 +61,41 @@ class JobCollector:
             except Exception:
                 text = ""
         return text
+
+    def _classify_attribute_text(self, text: str) -> tuple[Optional[str], Optional[str]]:
+        if not text:
+            return None, None
+        normalized = " ".join(text.split())
+        lower = normalized.lower()
+
+        job_type_map = {
+            "full-time": "Full-time",
+            "part-time": "Part-time",
+            "contract": "Contract",
+            "temporary": "Temporary",
+            "internship": "Internship",
+            "seasonal": "Seasonal",
+            "apprenticeship": "Apprenticeship",
+        }
+        job_types = []
+        for key, label in job_type_map.items():
+            if key in lower:
+                job_types.append(label)
+
+        job_type = ", ".join(job_types) if job_types else None
+
+        salary = None
+        salary_pattern = (
+            r"(?:estimated\s+)?"
+            r"[$£€]\s?\d[\d,]*(?:\.\d+)?"
+            r"(?:\s*-\s*[$£€]?\s?\d[\d,]*(?:\.\d+)?)?"
+            r"\s*(?:an?|per)?\s*(?:hour|year|yr|month|week|day)"
+        )
+        match = re.search(salary_pattern, normalized, re.IGNORECASE)
+        if match:
+            salary = match.group(0).strip()
+
+        return salary, job_type
 
 
     def _safe_goto(self, url: str) -> bool:
@@ -148,75 +187,93 @@ class JobCollector:
     def collect_jobs(self, query: SearchQuery) -> List[Job]:
         """Collect jobs for a single search query"""
         jobs = []
-        url = self._build_search_url(query)
+        seen_links = set()
+        max_pages = self.config.get_max_pages()
+        results_per_page = 10
 
-        logger.info(f"Searching: {query}")
-        print(f"\n🔍 Searching: {query}")
+        for page_index in range(max_pages):
+            start = page_index * results_per_page
+            url = self._build_search_url(query, start=start)
+            page_label = f" (page {page_index + 1}/{max_pages})" if max_pages > 1 else ""
 
-        try:
-            # Navigate to search results
-            if not self._safe_goto(url):
-                logger.warning("Failed to load search page after retries")
-                print("   ✗ Failed to load search page")
-                return jobs
-            self._random_delay()
-
-            # Try multiple selectors (Indeed changes these frequently)
-            selectors = [
-                ".job_seen_beacon",
-                ".jobsearch-ResultsList > li",
-                "[data-testid='jobListing']",
-                ".resultContent",
-                ".tapItem"
-            ]
-
-            job_cards = []
-            matched_selector = None
-            for selector in selectors:
-                try:
-                    self.page.wait_for_selector(selector, timeout=5000)
-                    job_cards = self.page.query_selector_all(selector)
-                    if job_cards:
-                        logger.info(f"Found jobs using selector: {selector}")
-                        matched_selector = selector
-                        break
-                except:
-                    continue
-
-            if not job_cards:
-                # Debug: save screenshot and HTML
-                self.page.screenshot(path="output/debug_screenshot.png")
-                logger.warning("No job cards found with any selector")
-                print(f"   ⚠️  No job cards found - saved debug screenshot")
-                return jobs
+            logger.info("Searching: %s%s", query, page_label)
+            print(f"\n🔍 Searching: {query}{page_label}")
 
             try:
-                self.page.wait_for_selector(".job-snippet", timeout=3000)
-            except Exception:
-                pass
+                # Navigate to search results
+                if not self._safe_goto(url):
+                    logger.warning("Failed to load search page after retries")
+                    print("   ✗ Failed to load search page")
+                    break
+                self._random_delay()
 
-            logger.info(f"Found {len(job_cards)} job cards")
-            print(f"   Found {len(job_cards)} listings")
+                # Try multiple selectors (Indeed changes these frequently)
+                selectors = [
+                    ".job_seen_beacon",
+                    ".jobsearch-ResultsList > li",
+                    "[data-testid='jobListing']",
+                    ".resultContent",
+                    ".tapItem"
+                ]
 
-            for i, card in enumerate(job_cards[:query.max_results]):
+                job_cards = []
+                for selector in selectors:
+                    try:
+                        self.page.wait_for_selector(selector, timeout=5000)
+                        job_cards = self.page.query_selector_all(selector)
+                        if job_cards:
+                            logger.info("Found jobs using selector: %s", selector)
+                            break
+                    except Exception:
+                        continue
+
+                if not job_cards:
+                    # Debug: save screenshot and HTML
+                    self.page.screenshot(path="output/debug_screenshot.png")
+                    logger.warning("No job cards found with any selector")
+                    print("   ⚠️  No job cards found - saved debug screenshot")
+                    break
+
                 try:
-                    job = self._extract_job_from_card(card)
-                    if job:
-                        jobs.append(job)
-                        logger.debug(f"Extracted: {job.title} at {job.company}")
-                except Exception as e:
-                    logger.warning(f"Failed to extract job {i}: {e}")
-                    continue
+                    self.page.wait_for_selector(".job-snippet", timeout=3000)
+                except Exception:
+                    pass
 
-                # Small delay between extractions
-                if i % 5 == 0:
-                    self._random_delay()
+                logger.info("Found %s job cards", len(job_cards))
+                print(f"   Found {len(job_cards)} listings")
 
-            print(f"   ✓ Collected {len(jobs)} jobs")
+                added_this_page = 0
+                for i, card in enumerate(job_cards):
+                    if len(jobs) >= query.max_results:
+                        break
+                    try:
+                        job = self._extract_job_from_card(card)
+                        if job and str(job.link) not in seen_links:
+                            seen_links.add(str(job.link))
+                            jobs.append(job)
+                            added_this_page += 1
+                            logger.debug("Extracted: %s at %s", job.title, job.company)
+                    except Exception as e:
+                        logger.warning("Failed to extract job %s: %s", i, e)
+                        continue
 
-        except Exception as e:
-            logger.error(f"Error collecting jobs: {e}")
-            print(f"   ✗ Error: {e}")
+                    # Small delay between extractions
+                    if i % 5 == 0:
+                        self._random_delay()
+
+                print(f"   ✓ Collected {len(jobs)} jobs")
+
+                if added_this_page == 0:
+                    logger.info("No new jobs added on page %s; stopping pagination", page_index + 1)
+                    break
+
+            except Exception as e:
+                logger.error("Error collecting jobs: %s", e)
+                print(f"   ✗ Error: {e}")
+                break
+
+            if len(jobs) >= query.max_results:
+                break
 
         return jobs
 
@@ -241,9 +298,21 @@ class JobCollector:
             if href and not href.startswith("http"):
                 href = f"https://www.indeed.com{href}"
 
-            # Salary (optional)
-            salary_elem = card.query_selector("[data-testid='attribute_snippet_testid']")
-            salary = salary_elem.inner_text() if salary_elem else None
+            # Salary/job type (optional)
+            salary = None
+            job_type = None
+            attribute_elems = card.query_selector_all("[data-testid='attribute_snippet_testid']")
+            for elem in attribute_elems:
+                attr_text = self._extract_text(elem)
+                if not attr_text:
+                    continue
+                attr_salary, attr_job_type = self._classify_attribute_text(attr_text)
+                if attr_salary and not salary:
+                    salary = attr_salary
+                if attr_job_type and not job_type:
+                    job_type = attr_job_type
+                if salary and job_type:
+                    break
 
             # Description snippet
             desc_elem = card.query_selector(".job-snippet")
@@ -259,6 +328,7 @@ class JobCollector:
                 location=location.strip(),
                 link=href,
                 salary=salary.strip() if salary else None,
+                job_type=job_type.strip() if job_type else None,
                 description=description.strip(),
                 date_posted=date_posted.strip() if date_posted else None,
                 source="indeed"

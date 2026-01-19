@@ -52,6 +52,7 @@ def display_config(config) -> None:
 
     print(f"\n📍 Location: {config.get_location()}")
     print(f"📊 Max results per search: {config.get_max_results()}")
+    print(f"📄 Max pages per search: {config.get_max_pages()}")
 
     print(f"\n⚙️  BROWSER SETTINGS:")
     print(f"  Headless mode: {config.is_headless()}")

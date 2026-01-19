@@ -22,6 +22,9 @@ search:
   
   # Maximum results to collect per keyword search
   max_results_per_search: 50
+
+  # Max pages to paginate per keyword search
+  max_pages: 2
   
   # Job boards to search
   job_boards:

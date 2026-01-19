@@ -17,6 +17,7 @@ class Job(BaseModel):
     link: HttpUrl
     description: str = ""
     salary: Optional[str] = None
+    job_type: Optional[str] = None
     
     # Metadata
     source: str = "target-site"  # Which job board
