@@ -75,10 +75,13 @@ class JobCollector:
 
         job_type_map = {
             "full-time": "Full-time",
+            "full_time": "Full-time",
             "part-time": "Part-time",
+            "part_time": "Part-time",
             "contract": "Contract",
             "temporary": "Temporary",
             "internship": "Internship",
+            "intern": "Internship",
             "seasonal": "Seasonal",
             "apprenticeship": "Apprenticeship",
         }
@@ -89,18 +92,71 @@ class JobCollector:
 
         job_type = ", ".join(job_types) if job_types else None
 
-        salary = None
-        salary_pattern = (
-            r"(?:estimated\s+)?"
-            r"[$£€]\s?\d[\d,]*(?:\.\d+)?"
-            r"(?:\s*-\s*[$£€]?\s?\d[\d,]*(?:\.\d+)?)?"
-            r"\s*(?:an?|per)?\s*(?:hour|year|yr|month|week|day)"
-        )
-        match = re.search(salary_pattern, normalized, re.IGNORECASE)
-        if match:
-            salary = match.group(0).strip()
+        salary = self._normalize_salary_text(normalized)
 
         return salary, job_type
+
+    def _normalize_salary_unit(self, unit: Optional[str]) -> Optional[str]:
+        if not unit:
+            return None
+        unit_lower = unit.strip().lower()
+        if unit_lower in ("yr", "year"):
+            return "year"
+        if unit_lower in ("hr", "hour"):
+            return "hour"
+        return unit_lower
+
+    def _normalize_salary_text(self, text: str) -> Optional[str]:
+        if not text:
+            return None
+        pattern = re.compile(
+            r"(?:\b(?:estimated|from|up to|starting at|starting from)\b\s+)?"
+            r"([$£€])\s?(\d[\d,]*(?:\.\d+)?)"
+            r"(?:\s*-\s*[$£€]?\s?(\d[\d,]*(?:\.\d+)?))?"
+            r"\s*(?:an?|per)?\s*(hour|year|yr|month|week|day)\b",
+            re.IGNORECASE,
+        )
+        match = pattern.search(text)
+        if not match:
+            return None
+        currency, min_raw, max_raw, unit_raw = match.groups()
+        unit = self._normalize_salary_unit(unit_raw)
+        if not unit:
+            return None
+
+        def _format_amount(value_raw: str) -> str:
+            try:
+                value = float(value_raw.replace(",", ""))
+            except Exception:
+                return f"{currency}{value_raw}"
+            if value.is_integer():
+                return f"{currency}{int(value):,}"
+            return f"{currency}{value:,.2f}"
+
+        min_text = _format_amount(min_raw)
+        max_text = _format_amount(max_raw) if max_raw else None
+        article = "an" if unit == "hour" else "a"
+        if max_text:
+            return f"{min_text} - {max_text} {article} {unit}"
+        return f"{min_text} {article} {unit}"
+
+    def _normalize_job_type_value(self, value: str) -> Optional[str]:
+        if not value:
+            return None
+        normalized = value.strip().replace("_", "-").lower()
+        job_type_map = {
+            "full-time": "Full-time",
+            "part-time": "Part-time",
+            "contract": "Contract",
+            "temporary": "Temporary",
+            "intern": "Internship",
+            "internship": "Internship",
+            "seasonal": "Seasonal",
+            "apprenticeship": "Apprenticeship",
+        }
+        if normalized in job_type_map:
+            return job_type_map[normalized]
+        return normalized.replace("-", " ").title()
 
     def _format_salary(self, currency: Optional[str], min_value: Optional[float],
                        max_value: Optional[float], unit: Optional[str]) -> Optional[str]:
@@ -119,8 +175,10 @@ class JobCollector:
             salary = f"{min_text} - {max_text}"
         else:
             salary = min_text or max_text
-        if unit:
-            salary = f"{salary} {unit}"
+        unit_norm = self._normalize_salary_unit(unit)
+        if unit_norm:
+            article = "an" if unit_norm == "hour" else "a"
+            salary = f"{salary} {article} {unit_norm}"
         return salary
 
     def _extract_salary_from_json_ld(self, page: Page) -> tuple[Optional[str], Optional[str]]:
@@ -141,9 +199,17 @@ class JobCollector:
                 employment = item.get("employmentType")
                 if employment and not job_type:
                     if isinstance(employment, list):
-                        job_type = ", ".join(employment)
+                        normalized_types = []
+                        for entry in employment:
+                            normalized = self._normalize_job_type_value(str(entry))
+                            if normalized and normalized not in normalized_types:
+                                normalized_types.append(normalized)
+                        if normalized_types:
+                            job_type = ", ".join(normalized_types)
                     else:
-                        job_type = str(employment)
+                        normalized = self._normalize_job_type_value(str(employment))
+                        if normalized:
+                            job_type = normalized
                 base_salary = item.get("baseSalary")
                 if not isinstance(base_salary, dict):
                     continue
@@ -190,6 +256,11 @@ class JobCollector:
         salary_selectors = [
             "[data-testid='jobsearch-JobInfoHeader-salary']",
             "[data-testid='salary-snippet']",
+            "[data-testid='salaryInfoAndJobType']",
+            "#salaryInfoAndJobType",
+            "[data-testid='jobMetadataHeader']",
+            ".jobsearch-JobMetadataHeader-item",
+            ".jobsearch-JobMetadataHeader-iconLabel",
             ".salary-snippet",
         ]
         detail_section_selectors = [
@@ -385,14 +456,26 @@ class JobCollector:
 
     def stop_browser(self) -> None:
         """Clean up browser resources"""
-        if self.detail_salary_page:
-            self.detail_salary_page.close()
-        if self.context:
-            self.context.close()
-        if self.browser:
-            self.browser.close()
-        if self.playwright:
-            self.playwright.stop()
+        try:
+            if self.detail_salary_page:
+                self.detail_salary_page.close()
+        except Exception:
+            logger.debug("Detail salary page close failed", exc_info=True)
+        try:
+            if self.context:
+                self.context.close()
+        except Exception:
+            logger.debug("Browser context close failed", exc_info=True)
+        try:
+            if self.browser:
+                self.browser.close()
+        except Exception:
+            logger.debug("Browser close failed", exc_info=True)
+        try:
+            if self.playwright:
+                self.playwright.stop()
+        except Exception:
+            logger.debug("Playwright stop failed", exc_info=True)
         logger.info("Browser closed")
 
     def collect_jobs(self, query: SearchQuery) -> List[Job]:
@@ -403,6 +486,7 @@ class JobCollector:
         unlimited_pages = max_pages <= 0
         results_per_page = 10
         max_detail_fetches = self.config.get_detail_salary_max_per_query()
+        unlimited_detail_fetches = max_detail_fetches <= 0
         detail_fetches = 0
 
         last_first_link = None
@@ -418,7 +502,10 @@ class JobCollector:
                 page_label = f" (page {page_index + 1}/{max_pages})" if max_pages > 1 else ""
 
             logger.info("Searching: %s%s", query, page_label)
-            print(f"\n🔍 Searching: {query}{page_label}")
+            if hasattr(query, "index") and hasattr(query, "total"):
+                print(f"\n🔍 Query {query.index}/{query.total}: {query}{page_label}")
+            else:
+                print(f"\n🔍 Searching: {query}{page_label}")
 
             try:
                 # Navigate to search results
@@ -462,12 +549,17 @@ class JobCollector:
 
                 logger.info("Found %s job cards", len(job_cards))
                 print(f"   Found {len(job_cards)} listings")
+                remaining_cap = query.max_results - len(jobs) if query.max_results > 0 else len(job_cards)
+                progress_total = min(len(job_cards), remaining_cap) if remaining_cap > 0 else len(job_cards)
 
                 added_this_page = 0
                 first_link = None
                 for i, card in enumerate(job_cards):
                     if len(jobs) >= query.max_results:
                         break
+                    if progress_total > 0:
+                        progress_current = min(i + 1, progress_total)
+                        print(f"\r   Progress: {progress_current}/{progress_total}", end="", flush=True)
                     try:
                         job = self._extract_job_from_card(card)
                         if job and str(job.link) not in seen_links:
@@ -475,15 +567,20 @@ class JobCollector:
                                 self.config.is_detail_salary_enabled()
                                 and not job.salary
                                 and job.link
-                                and detail_fetches < max_detail_fetches
+                                and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
                             ):
+                                if unlimited_detail_fetches:
+                                    fetch_label = f"{detail_fetches + 1}/∞"
+                                else:
+                                    fetch_label = f"{detail_fetches + 1}/{max_detail_fetches}"
+                                print(f"\r   Detail salary: {fetch_label}", end="", flush=True)
                                 logger.info(
-                                    "Detail salary fetch %s/%s: %s",
-                                    detail_fetches + 1,
-                                    max_detail_fetches,
+                                    "Detail salary fetch %s: %s",
+                                    fetch_label,
                                     job.link,
                                 )
                                 detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
+                                print("")
                                 if detail_salary:
                                     job.salary = detail_salary
                                 if detail_job_type:
@@ -504,6 +601,8 @@ class JobCollector:
                     if i % 5 == 0:
                         self._random_delay()
 
+                if progress_total > 0:
+                    print("")
                 print(f"   ✓ Collected {len(jobs)} jobs")
 
                 if added_this_page == 0:
@@ -516,6 +615,10 @@ class JobCollector:
                 if first_link:
                     last_first_link = first_link
 
+            except KeyboardInterrupt:
+                logger.warning("Interrupted during collection; returning partial results for query")
+                print("   ⚠️  Interrupted - returning partial results")
+                break
             except Exception as e:
                 logger.error("Error collecting jobs: %s", e)
                 print(f"   ✗ Error: {e}")
@@ -605,9 +708,14 @@ class JobCollector:
             self.start_browser()
 
             for query in queries:
-                jobs = self.collect_jobs(query)
-                all_jobs.extend(jobs)
-                self._random_delay()
+                try:
+                    jobs = self.collect_jobs(query)
+                    all_jobs.extend(jobs)
+                    self._random_delay()
+                except KeyboardInterrupt:
+                    logger.warning("Interrupted during collection; returning partial results")
+                    print("\n⚠️  Interrupted - returning partial results")
+                    break
 
         finally:
             self.stop_browser()
