@@ -5,6 +5,7 @@ Job Search Automation - Main Entry Point
 Automated job search and collection system
 """
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -52,12 +53,15 @@ def display_config(config) -> None:
 
     print(f"\n📍 Location: {config.get_location()}")
     print(f"📊 Max results per search: {config.get_max_results()}")
-    print(f"📄 Max pages per search: {config.get_max_pages()}")
+    max_pages = config.get_max_pages()
+    max_pages_label = "unlimited (auto-stop)" if max_pages <= 0 else str(max_pages)
+    print(f"📄 Max pages per search: {max_pages_label}")
 
     print(f"\n⚙️  BROWSER SETTINGS:")
     print(f"  Headless mode: {config.is_headless()}")
     print(f"  Delay range: {config.get_min_delay()}s - {config.get_max_delay()}s")
     print(f"  Page timeout: {config.get_page_timeout()/1000}s")
+    print(f"  Detail salary fetch: {config.is_detail_salary_enabled()}")
 
     print(f"\n💾 OUTPUT:")
     print(f"  JSON: {config.get_output_path('json')}")
@@ -94,13 +98,24 @@ def create_search_queries(config) -> list[SearchQuery]:
     return queries
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Job Search Automation")
+    parser.add_argument(
+        "--config",
+        default="config/settings.yaml",
+        help="Path to config YAML",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main execution function"""
     print("\n🚀 Starting Job Search Automation...")
+    args = parse_args()
 
     # Load configuration
     try:
-        config = load_config()
+        config = load_config(args.config)
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
         print("Make sure config/settings.yaml exists!")

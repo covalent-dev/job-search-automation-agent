@@ -64,6 +64,22 @@ class ConfigLoader:
     def get_max_pages(self) -> int:
         """Get max pages to paginate per search"""
         return int(self.get('search.max_pages', 1))
+
+    def is_detail_salary_enabled(self) -> bool:
+        """Check if detail salary fetch is enabled"""
+        return bool(self.get('search.detail_salary_fetch', False))
+
+    def get_detail_salary_timeout(self) -> int:
+        """Get detail salary fetch timeout in seconds"""
+        return int(self.get('search.detail_salary_timeout', 5))
+
+    def get_detail_salary_retries(self) -> int:
+        """Get detail salary fetch retries"""
+        return int(self.get('search.detail_salary_retries', 1))
+
+    def get_detail_salary_max_per_query(self) -> int:
+        """Get max detail salary fetches per query"""
+        return int(self.get('search.detail_salary_max_per_query', 10))
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""

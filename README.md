@@ -92,3 +92,6 @@ Edit `config/settings.yaml` to customize:
 - Browser behavior (headless mode, delays)
 - AI scoring options (Ollama)
 - Cross-run de-duplication log
+
+Headless runs (optional):
+- `python src/main.py --config config/settings.headless.yaml`

@@ -30,6 +30,7 @@ class JobCollector:
         self.session_file = SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
         self.max_retries = self.config.get_max_retries()
+        self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -97,6 +98,69 @@ class JobCollector:
 
         return salary, job_type
 
+    def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
+        if not self.context or not url:
+            return None, None
+
+        if url in self.detail_salary_cache:
+            return self.detail_salary_cache[url]
+
+        timeout_ms = self.config.get_detail_salary_timeout() * 1000
+        retries = self.config.get_detail_salary_retries()
+        selectors = [
+            "[data-testid='jobsearch-JobInfoHeader-salary']",
+            "[data-testid='salary-snippet']",
+            ".salary-snippet",
+            "section[aria-label='Job details']",
+        ]
+
+        salary = None
+        job_type = None
+
+        for attempt in range(1, retries + 1):
+            detail_page = None
+            try:
+                detail_page = self.context.new_page()
+                detail_page.set_default_timeout(timeout_ms)
+                detail_page.set_default_navigation_timeout(timeout_ms)
+                detail_page.goto(url, wait_until="domcontentloaded")
+
+                for selector in selectors:
+                    element = detail_page.query_selector(selector)
+                    if not element:
+                        continue
+                    text = self._extract_text(element)
+                    if not text:
+                        continue
+                    found_salary, found_job_type = self._classify_attribute_text(text)
+                    if found_salary and not salary:
+                        salary = found_salary
+                    if found_job_type and not job_type:
+                        job_type = found_job_type
+                    if salary and job_type:
+                        break
+
+                if not salary or not job_type:
+                    body_text = detail_page.inner_text("body")
+                    found_salary, found_job_type = self._classify_attribute_text(body_text)
+                    if found_salary and not salary:
+                        salary = found_salary
+                    if found_job_type and not job_type:
+                        job_type = found_job_type
+
+                if salary or job_type:
+                    break
+
+            except Exception as exc:
+                logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
+                self._random_delay()
+            finally:
+                if detail_page:
+                    detail_page.close()
+
+        self.detail_salary_cache[url] = (salary, job_type)
+        return salary, job_type
+
 
     def _safe_goto(self, url: str) -> bool:
         """Navigate with retry for flaky pages."""
@@ -107,6 +171,24 @@ class JobCollector:
             except Exception as exc:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
                 self._random_delay()
+        return False
+
+    def _has_next_page(self) -> bool:
+        """Check if a next page control exists and is enabled."""
+        selectors = [
+            "a[aria-label='Next Page']",
+            "a[aria-label='Next']",
+            "a[aria-label='Next page']",
+        ]
+        for selector in selectors:
+            element = self.page.query_selector(selector)
+            if not element:
+                continue
+            aria_disabled = (element.get_attribute("aria-disabled") or "").lower()
+            disabled_attr = element.get_attribute("disabled")
+            if aria_disabled in ("true", "disabled") or disabled_attr is not None:
+                return False
+            return True
         return False
 
     def start_browser(self) -> None:
@@ -189,12 +271,22 @@ class JobCollector:
         jobs = []
         seen_links = set()
         max_pages = self.config.get_max_pages()
+        unlimited_pages = max_pages <= 0
         results_per_page = 10
+        max_detail_fetches = self.config.get_detail_salary_max_per_query()
+        detail_fetches = 0
 
-        for page_index in range(max_pages):
+        last_first_link = None
+        page_index = 0
+        while True:
+            if not unlimited_pages and page_index >= max_pages:
+                break
             start = page_index * results_per_page
             url = self._build_search_url(query, start=start)
-            page_label = f" (page {page_index + 1}/{max_pages})" if max_pages > 1 else ""
+            if unlimited_pages:
+                page_label = f" (page {page_index + 1}/∞)"
+            else:
+                page_label = f" (page {page_index + 1}/{max_pages})" if max_pages > 1 else ""
 
             logger.info("Searching: %s%s", query, page_label)
             print(f"\n🔍 Searching: {query}{page_label}")
@@ -243,16 +335,32 @@ class JobCollector:
                 print(f"   Found {len(job_cards)} listings")
 
                 added_this_page = 0
+                first_link = None
                 for i, card in enumerate(job_cards):
                     if len(jobs) >= query.max_results:
                         break
                     try:
                         job = self._extract_job_from_card(card)
                         if job and str(job.link) not in seen_links:
+                            if (
+                                self.config.is_detail_salary_enabled()
+                                and not job.salary
+                                and job.link
+                                and detail_fetches < max_detail_fetches
+                            ):
+                                detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
+                                if detail_salary:
+                                    job.salary = detail_salary
+                                if detail_job_type:
+                                    job.job_type = detail_job_type
+                                detail_fetches += 1
+
                             seen_links.add(str(job.link))
                             jobs.append(job)
                             added_this_page += 1
                             logger.debug("Extracted: %s at %s", job.title, job.company)
+                        if first_link is None and job:
+                            first_link = str(job.link)
                     except Exception as e:
                         logger.warning("Failed to extract job %s: %s", i, e)
                         continue
@@ -267,13 +375,25 @@ class JobCollector:
                     logger.info("No new jobs added on page %s; stopping pagination", page_index + 1)
                     break
 
+                if first_link and last_first_link and first_link == last_first_link:
+                    logger.info("First result repeated on page %s; stopping pagination", page_index + 1)
+                    break
+                if first_link:
+                    last_first_link = first_link
+
             except Exception as e:
                 logger.error("Error collecting jobs: %s", e)
                 print(f"   ✗ Error: {e}")
                 break
 
+            if not self._has_next_page():
+                logger.info("No next page control found; stopping pagination")
+                break
+
             if len(jobs) >= query.max_results:
                 break
+
+            page_index += 1
 
         return jobs
 

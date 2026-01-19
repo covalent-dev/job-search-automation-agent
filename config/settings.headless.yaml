@@ -1,4 +1,4 @@
-# Job Bot Configuration v0.1
+# Job Bot Configuration v0.1 (Headless)
 # Search parameters for automated job hunting
 
 search:
@@ -22,7 +22,7 @@ search:
   
   # Maximum results to collect per keyword search
   max_results_per_search: 50
-
+  
   # Max pages to paginate per keyword search (0 = unlimited, auto-stop)
   max_pages: 0
 
@@ -53,7 +53,7 @@ output:
 # Browser behavior
 browser:
   # Headless mode (true = invisible browser, false = see what's happening)
-  headless: false
+  headless: true
   
   # Delays to appear more human-like (in seconds)
   min_delay: 0.5
