@@ -1,6 +1,6 @@
 # Job Search Automation
 
-Automated job search and aggregation using Playwright. Testing phase - v0.1 ships Week 4.
+Automated job search and aggregation using Playwright. Testing phase
 
 ## Status: v0.0 (Testing)
 
