@@ -9,6 +9,7 @@ import os
 import random
 import time
 import re
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -120,8 +121,22 @@ class JobCollector:
         except Exception:
             logger.debug("Captcha log write failed", exc_info=True)
 
+    def _notify_captcha(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    'display notification "Captcha detected during detail fetch. Action needed." with title "Job Bot"',
+                ],
+                check=False,
+            )
+        except Exception:
+            logger.debug("Captcha notification failed", exc_info=True)
+
     def _handle_captcha_prompt(self, url: str) -> str:
         self._log_captcha(url)
+        self._notify_captcha()
         print("\n⚠️  CAPTCHA detected during detail salary fetch.")
         print("Choose how to proceed:")
         print("  1) Solve manually (pause and resume)")
@@ -356,6 +371,8 @@ class JobCollector:
         while attempt < retries:
             try:
                 attempt += 1
+                if self.detail_salary_page is not None and self.detail_salary_page.is_closed():
+                    self.detail_salary_page = None
                 if self.detail_salary_page is None:
                     self.detail_salary_page = self.context.new_page()
                     self.detail_salary_page.set_default_timeout(timeout_ms)
@@ -395,6 +412,7 @@ class JobCollector:
                     if action == "skip":
                         return None, None
                     if action == "retry":
+                        self.detail_salary_page = None
                         attempt = max(attempt - 1, 0)
                         continue
 
@@ -444,6 +462,8 @@ class JobCollector:
             except Exception as exc:
                 if isinstance(exc, CaptchaAbort):
                     raise
+                if "Target page, context or browser has been closed" in str(exc):
+                    self.detail_salary_page = None
                 logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
                 self._random_delay()
 
