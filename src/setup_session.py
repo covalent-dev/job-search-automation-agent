@@ -8,8 +8,11 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 from config_loader import load_config
 
-# Use a persistent browser profile directory
-USER_DATA_DIR = Path.home() / ".job-search-automation" / "browser-profile"
+# Use a persistent browser profile directory per repo
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_NAME = REPO_ROOT.name
+PROFILE_ROOT = Path.home() / ".job-search-automation"
+USER_DATA_DIR = PROFILE_ROOT / f"{REPO_NAME}-profile"
 SESSION_FILE = "config/session.json"
 
 

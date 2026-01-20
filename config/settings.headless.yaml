@@ -50,7 +50,7 @@ output:
   # Obsidian vault sync (optional - copies output to vault)
   vault_sync:
     enabled: true
-    vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data"
+    vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/indeed"
 
 # Browser behavior
 browser:

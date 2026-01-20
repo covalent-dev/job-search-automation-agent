@@ -19,7 +19,10 @@ from models import Job, SearchQuery
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
-USER_DATA_DIR = Path.home() / ".job-search-automation" / "browser-profile"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_NAME = REPO_ROOT.name
+PROFILE_ROOT = Path.home() / ".job-search-automation"
+USER_DATA_DIR = PROFILE_ROOT / f"{REPO_NAME}-profile"
 
 
 class CaptchaAbort(Exception):
