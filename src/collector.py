@@ -41,12 +41,16 @@ class JobCollector:
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
         self.skip_detail_fetches = False
         self.detail_debug_saved = False
+        self.captcha_debug_saved = False
         self.abort_requested = False
         self.total_jobs_collected = 0
         self.total_jobs_with_salary = 0
         self.detail_fetch_count_total = 0
         self.first_captcha_fetch_count: Optional[int] = None
         self.captcha_events: list[dict] = []
+        self.captcha_consecutive = 0
+        self.captcha_backoff_base_seconds = 60
+        self.captcha_backoff_max_seconds = 300
         self.current_query: Optional[str] = None
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
@@ -160,6 +164,16 @@ class JobCollector:
                 self.skip_detail_fetches = True
                 return "skip"
             print("Invalid choice. Please enter 1, 2, or 3.")
+
+    def _captcha_backoff(self) -> None:
+        if self.captcha_consecutive <= 0:
+            return
+        delay_seconds = min(
+            self.captcha_backoff_base_seconds * (2 ** (self.captcha_consecutive - 1)),
+            self.captcha_backoff_max_seconds,
+        )
+        print(f"\n⏳ Backing off for {delay_seconds:.0f}s to reduce captcha triggers...")
+        time.sleep(delay_seconds)
 
     def _classify_attribute_text(self, text: str) -> tuple[Optional[str], Optional[str]]:
         if not text:
@@ -319,21 +333,54 @@ class JobCollector:
                 break
         return salary, job_type
 
-    def _is_captcha_page(self, page: Page) -> bool:
+    def _is_captcha_page(self, page: Page) -> Optional[dict]:
         try:
             title = (page.title() or "").lower()
+            url = (page.url or "").lower()
+            title_markers = [
+                "just a moment...",
+                "attention required! | cloudflare",
+            ]
+            for marker in title_markers:
+                if marker in title:
+                    return {"reason": f"title:{marker}", "title": title, "url": url}
+
+            url_markers = [
+                "__cf_chl",
+                "/cdn-cgi/",
+                "challenges.cloudflare.com",
+                "cf-challenge",
+            ]
+            for marker in url_markers:
+                if marker in url:
+                    return {"reason": f"url:{marker}", "title": title, "url": url}
+
+            selector_markers = {
+                "#cf-challenge-running": "selector:#cf-challenge-running",
+                "form#challenge-form": "selector:form#challenge-form",
+                "iframe[src*='challenges.cloudflare.com']": "selector:cloudflare-iframe",
+                "iframe[src*='hcaptcha.com']": "selector:hcaptcha-iframe",
+                "iframe[src*='recaptcha']": "selector:recaptcha-iframe",
+                ".cf-turnstile": "selector:cf-turnstile",
+                "[data-sitekey]": "selector:data-sitekey",
+            }
+            for selector, reason in selector_markers.items():
+                if page.query_selector(selector):
+                    return {"reason": reason, "title": title, "url": url}
+
             body = (page.inner_text("body") or "").lower()
-            markers = [
+            body_markers = [
                 "cloudflare",
                 "captcha",
-                "challenge",
                 "verify you are human",
-                "cf-challenge",
                 "additional verification required",
             ]
-            return any(marker in title for marker in markers) or any(marker in body for marker in markers)
+            for marker in body_markers:
+                if marker in body:
+                    return {"reason": f"body:{marker}", "title": title, "url": url}
+            return None
         except Exception:
-            return False
+            return None
 
     def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
         if not self.context or not url:
@@ -399,13 +446,27 @@ class JobCollector:
                         break
                     except Exception:
                         continue
-                if self._is_captcha_page(detail_page):
-                    logger.warning("Detail salary fetch blocked by captcha")
-                    try:
-                        Path("output").mkdir(parents=True, exist_ok=True)
-                        detail_page.screenshot(path="output/detail_captcha.png")
-                    except Exception:
-                        pass
+                captcha_detection = self._is_captcha_page(detail_page)
+                if captcha_detection:
+                    self.captcha_consecutive += 1
+                    logger.warning(
+                        "Detail salary fetch blocked by captcha (reason=%s, title=%s, url=%s)",
+                        captcha_detection["reason"],
+                        captcha_detection["title"],
+                        captcha_detection["url"],
+                    )
+                    self._captcha_backoff()
+                    if not self.captcha_debug_saved:
+                        try:
+                            Path("output").mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            detail_page.screenshot(path=f"output/detail_captcha_{timestamp}.png")
+                            Path(f"output/detail_captcha_{timestamp}.html").write_text(
+                                detail_page.content(), encoding="utf-8"
+                            )
+                            self.captcha_debug_saved = True
+                        except Exception:
+                            pass
                     action = self._handle_captcha_prompt(url)
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
@@ -415,6 +476,8 @@ class JobCollector:
                         self.detail_salary_page = None
                         attempt = max(attempt - 1, 0)
                         continue
+                else:
+                    self.captcha_consecutive = 0
 
                 if not salary or not job_type:
                     json_salary, json_job_type = self._extract_salary_from_json_ld(detail_page)

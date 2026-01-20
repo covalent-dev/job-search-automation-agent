@@ -69,6 +69,7 @@ class OutputWriter:
                 lines.append(f"### {i}. {job.title}\n")
                 lines.append(f"**Company:** {job.company}  ")
                 lines.append(f"**Location:** {job.location}  ")
+                lines.append(f"**Source:** {job.source}  ")
                 if job.salary:
                     lines.append(f"**Salary:** {job.salary}  ")
                 if job.job_type and "remote" in job.location.lower():
@@ -90,8 +91,8 @@ class OutputWriter:
         lines.append("---\n")
         lines.append("## Summary Table\n")
         show_ai = any(job.ai_score is not None for job in jobs)
-        header = "| # | Title | Company | Location | Salary | Job Type |"
-        separator = "|---|-------|---------|----------|--------|----------|"
+        header = "| # | Title | Company | Location | Source | Salary | Job Type |"
+        separator = "|---|-------|---------|----------|--------|--------|----------|"
         if show_ai:
             header += " AI |"
             separator += "----|"
@@ -104,11 +105,12 @@ class OutputWriter:
             salary = job.salary if job.salary else "-"
             job_type = job.job_type if job.job_type and "remote" in job.location.lower() else "-"
             title_short = job.title[:40] + "..." if len(job.title) > 40 else job.title
-            row = "| {idx} | {title} | {company} | {location} | {salary} | {job_type} |".format(
+            row = "| {idx} | {title} | {company} | {location} | {source} | {salary} | {job_type} |".format(
                 idx=i,
                 title=_escape_md(title_short),
                 company=_escape_md(job.company),
                 location=_escape_md(job.location),
+                source=_escape_md(job.source),
                 salary=_escape_md(salary),
                 job_type=_escape_md(job_type),
             )

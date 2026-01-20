@@ -36,7 +36,7 @@ search:
   
   # Job boards to search
   job_boards:
-    - "target-site"
+    - "indeed"
 
 # Output settings
 output:
