@@ -44,6 +44,8 @@ class SearchQuery(BaseModel):
     location: str
     max_results: int = 50
     job_board: str = "target-site"
+    index: Optional[int] = None
+    total: Optional[int] = None
     
     def __str__(self) -> str:
         return f"'{self.keyword}' in {self.location}"

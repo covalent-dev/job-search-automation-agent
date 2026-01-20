@@ -9,6 +9,7 @@ import os
 import random
 import time
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
 USER_DATA_DIR = Path.home() / ".job-search-automation" / "browser-profile"
+
+
+class CaptchaAbort(Exception):
+    """Raised when user opts to abort after captcha."""
 
 
 class JobCollector:
@@ -33,8 +38,18 @@ class JobCollector:
         self.user_data_dir = USER_DATA_DIR
         self.max_retries = self.config.get_max_retries()
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
-        self.detail_salary_blocked = False
+        self.skip_detail_fetches = False
         self.detail_debug_saved = False
+        self.abort_requested = False
+        self.total_jobs_collected = 0
+        self.total_jobs_with_salary = 0
+        self.detail_fetch_count_total = 0
+        self.first_captcha_fetch_count: Optional[int] = None
+        self.captcha_events: list[dict] = []
+        self.current_query: Optional[str] = None
+        self.jobs_checkpoint: List[Job] = []
+        self.checkpoint_path = Path("output/progress_checkpoint.json")
+        self.captcha_log_path = Path("output/captcha_log.json")
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -66,6 +81,70 @@ class JobCollector:
             except Exception:
                 text = ""
         return text
+
+    def _serialize_job(self, job: Job) -> dict:
+        if hasattr(job, "model_dump"):
+            return job.model_dump()
+        return job.dict()
+
+    def _write_checkpoint(self, jobs: List[Job]) -> None:
+        try:
+            Path("output").mkdir(parents=True, exist_ok=True)
+            payload = {
+                "timestamp": datetime.now().isoformat(),
+                "total_jobs": self.total_jobs_collected,
+                "jobs_with_salary": self.total_jobs_with_salary,
+                "current_query": self.current_query,
+                "jobs": [self._serialize_job(job) for job in jobs],
+            }
+            self.checkpoint_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:
+            logger.debug("Checkpoint write failed", exc_info=True)
+
+    def _log_captcha(self, url: str) -> None:
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "query": self.current_query,
+            "job_number": self.total_jobs_collected + 1,
+            "detail_fetch_count": self.detail_fetch_count_total,
+            "url": url,
+        }
+        self.captcha_events.append(event)
+        if self.first_captcha_fetch_count is None:
+            self.first_captcha_fetch_count = self.detail_fetch_count_total
+        try:
+            Path("output").mkdir(parents=True, exist_ok=True)
+            self.captcha_log_path.write_text(
+                json.dumps(self.captcha_events, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            logger.debug("Captcha log write failed", exc_info=True)
+
+    def _handle_captcha_prompt(self, url: str) -> str:
+        self._log_captcha(url)
+        print("\n⚠️  CAPTCHA detected during detail salary fetch.")
+        print("Choose how to proceed:")
+        print("  1) Solve manually (pause and resume)")
+        print("  2) Abort run (save collected data)")
+        print("  3) Skip remaining detail fetches (continue without salaries)")
+        while True:
+            choice = input("Enter 1, 2, or 3: ").strip()
+            if choice == "1":
+                print("\nSolve the captcha in the browser window, then press ENTER to continue.")
+                input()
+                return "retry"
+            if choice == "2":
+                print(
+                    f"\nCollected {self.total_jobs_collected} jobs with "
+                    f"{self.total_jobs_with_salary} salaries."
+                )
+                self.abort_requested = True
+                return "abort"
+            if choice == "3":
+                print("\nSkipping remaining detail salary fetches for this run.")
+                self.skip_detail_fetches = True
+                return "skip"
+            print("Invalid choice. Please enter 1, 2, or 3.")
 
     def _classify_attribute_text(self, text: str) -> tuple[Optional[str], Optional[str]]:
         if not text:
@@ -228,22 +307,23 @@ class JobCollector:
     def _is_captcha_page(self, page: Page) -> bool:
         try:
             title = (page.title() or "").lower()
-            if "additional verification required" in title or "cloudflare" in title:
-                return True
             body = (page.inner_text("body") or "").lower()
-            captcha_markers = [
-                "additional verification required",
-                "verify you are human",
+            markers = [
                 "cloudflare",
+                "captcha",
+                "challenge",
+                "verify you are human",
+                "cf-challenge",
+                "additional verification required",
             ]
-            return any(marker in body for marker in captcha_markers)
+            return any(marker in title for marker in markers) or any(marker in body for marker in markers)
         except Exception:
             return False
 
     def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
         if not self.context or not url:
             return None, None
-        if self.detail_salary_blocked:
+        if self.skip_detail_fetches:
             return None, None
 
         if url in self.detail_salary_cache:
@@ -272,8 +352,10 @@ class JobCollector:
         salary = None
         job_type = None
 
-        for attempt in range(1, retries + 1):
+        attempt = 0
+        while attempt < retries:
             try:
+                attempt += 1
                 if self.detail_salary_page is None:
                     self.detail_salary_page = self.context.new_page()
                     self.detail_salary_page.set_default_timeout(timeout_ms)
@@ -301,13 +383,20 @@ class JobCollector:
                     except Exception:
                         continue
                 if self._is_captcha_page(detail_page):
-                    logger.warning("Detail salary fetch blocked by captcha; disabling detail fetches")
+                    logger.warning("Detail salary fetch blocked by captcha")
                     try:
+                        Path("output").mkdir(parents=True, exist_ok=True)
                         detail_page.screenshot(path="output/detail_captcha.png")
                     except Exception:
                         pass
-                    self.detail_salary_blocked = True
-                    break
+                    action = self._handle_captcha_prompt(url)
+                    if action == "abort":
+                        raise CaptchaAbort("User requested abort after captcha")
+                    if action == "skip":
+                        return None, None
+                    if action == "retry":
+                        attempt = max(attempt - 1, 0)
+                        continue
 
                 if not salary or not job_type:
                     json_salary, json_job_type = self._extract_salary_from_json_ld(detail_page)
@@ -353,6 +442,8 @@ class JobCollector:
                     break
 
             except Exception as exc:
+                if isinstance(exc, CaptchaAbort):
+                    raise
                 logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
                 self._random_delay()
 
@@ -490,6 +581,7 @@ class JobCollector:
         detail_fetches = 0
 
         last_first_link = None
+        self.current_query = str(query)
         page_index = 0
         while True:
             if not unlimited_pages and page_index >= max_pages:
@@ -567,12 +659,14 @@ class JobCollector:
                                 self.config.is_detail_salary_enabled()
                                 and not job.salary
                                 and job.link
+                                and not self.skip_detail_fetches
                                 and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
                             ):
                                 if unlimited_detail_fetches:
                                     fetch_label = f"{detail_fetches + 1}/∞"
                                 else:
                                     fetch_label = f"{detail_fetches + 1}/{max_detail_fetches}"
+                                self.detail_fetch_count_total += 1
                                 print(f"\r   Detail salary: {fetch_label}", end="", flush=True)
                                 logger.info(
                                     "Detail salary fetch %s: %s",
@@ -589,6 +683,12 @@ class JobCollector:
 
                             seen_links.add(str(job.link))
                             jobs.append(job)
+                            self.total_jobs_collected += 1
+                            if job.salary:
+                                self.total_jobs_with_salary += 1
+                            self.jobs_checkpoint.append(job)
+                            if self.total_jobs_collected % 25 == 0:
+                                self._write_checkpoint(self.jobs_checkpoint)
                             added_this_page += 1
                             logger.debug("Extracted: %s at %s", job.title, job.company)
                         if first_link is None and job:
@@ -615,6 +715,8 @@ class JobCollector:
                 if first_link:
                     last_first_link = first_link
 
+            except CaptchaAbort:
+                raise
             except KeyboardInterrupt:
                 logger.warning("Interrupted during collection; returning partial results for query")
                 print("   ⚠️  Interrupted - returning partial results")
@@ -712,6 +814,10 @@ class JobCollector:
                     jobs = self.collect_jobs(query)
                     all_jobs.extend(jobs)
                     self._random_delay()
+                except CaptchaAbort:
+                    logger.warning("Aborting run after captcha per user request")
+                    print("\n⚠️  Run aborted by user after captcha.")
+                    break
                 except KeyboardInterrupt:
                     logger.warning("Interrupted during collection; returning partial results")
                     print("\n⚠️  Interrupted - returning partial results")
@@ -729,6 +835,8 @@ class JobCollector:
                 unique_jobs.append(job)
 
         print(f"\n📊 Total: {len(unique_jobs)} unique jobs collected")
+        if self.first_captcha_fetch_count is not None:
+            print(f"⚠️  Hit captcha after {self.first_captcha_fetch_count} detail fetches")
         print("="*60 + "\n")
 
         logger.info(f"Collection complete: {len(unique_jobs)} unique jobs")

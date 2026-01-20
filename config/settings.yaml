@@ -5,20 +5,30 @@ search:
   # Job search keywords - will search for each separately
   keywords:
     - "AI engineer"
+    - "AI/ML engineer"
+    - "machine learning engineer"
+    - "AI systems engineer"
+    - "AI infrastructure engineer"
+    - "AI platform engineer"
     - "MLOps engineer"
+    - "LLM engineer"
+    - "LLM ops engineer"
+    - "RAG engineer"
+    - "generative AI engineer"
+    - "AI automation engineer"
   
   # Primary location filter
   location: "Remote"
   
   # Maximum results to collect per keyword search
-  max_results_per_search: 20
+  max_results_per_search: 50
 
   # Max pages to paginate per keyword search (0 = unlimited, auto-stop)
-  max_pages: 1
+  max_pages: 2
 
   # Detail page salary fetch (slower but more accurate)
   detail_salary_fetch: true
-  detail_salary_timeout: 6
+  detail_salary_timeout: 9
   detail_salary_retries: 1
   detail_salary_max_per_query: 0
   detail_salary_delay_min: 1.5
@@ -83,7 +93,7 @@ ai_filter:
 
 # Cross-run de-duplication
 dedupe:
-  enabled: true
+  enabled: false
   hash_file: "output/dedupe_hashes.jsonl"
 
 # Logging

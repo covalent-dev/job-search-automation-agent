@@ -145,6 +145,8 @@ def main():
     # Collect jobs
     collector = JobCollector(config)
     jobs = collector.collect_all(queries)
+    if collector.abort_requested:
+        print("⚠️  Run aborted by user after captcha; saving collected results.")
 
     if not jobs:
         print("\n⚠️  No jobs collected. Check your search parameters or try again later.")
