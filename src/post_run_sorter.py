@@ -174,19 +174,32 @@ def main() -> None:
 
     include_keywords = _normalize_keywords(args.include or config.get("post_run.include_keywords", []))
     exclude_keywords = _normalize_keywords(args.exclude or config.get("post_run.exclude_keywords", []))
+    title_role_keywords = _normalize_keywords(config.get("post_run.title_role_keywords", []))
     min_score = args.min_score if args.min_score is not None else int(config.get("post_run.min_ai_score", 0))
     top_n = args.top_n if args.top_n is not None else int(config.get("post_run.top_n", 0))
 
     filtered = []
     filtered_out = 0
     for job in jobs:
-        text = _build_index_text(job)
-        if not _match_any(text, include_keywords):
+        title = job.title or ""
+        description = job.description or ""
+        index_text = _build_index_text(job)
+
+        title_match = _match_any(title, include_keywords)
+        desc_match = _match_any(description, include_keywords)
+        if not (title_match or desc_match):
             filtered_out += 1
             continue
-        if _should_exclude(text, exclude_keywords):
+
+        if desc_match and not title_match and title_role_keywords:
+            if not _match_any(title, title_role_keywords):
+                filtered_out += 1
+                continue
+
+        if _should_exclude(index_text, exclude_keywords):
             filtered_out += 1
             continue
+
         filtered.append(job)
 
     ai_scored = 0

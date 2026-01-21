@@ -112,6 +112,19 @@ post_run:
     - "ai systems"
     - "ai infrastructure"
     - "ai platform"
+  # If a job only matches include keywords in the description,
+  # require the title to contain at least one of these role keywords.
+  title_role_keywords:
+    - "engineer"
+    - "scientist"
+    - "research"
+    - "ml"
+    - "ai"
+    - "data"
+    - "mlops"
+    - "llm"
+    - "nlp"
+    - "vision"
   # Drop jobs that contain any exclude keyword (case-insensitive)
   exclude_keywords:
     - "senior"
@@ -136,6 +149,12 @@ post_run:
     - "interpreter"
     - "underwriter"
     - "claims"
+    - "tax"
+    - "preparer"
+    - "accounting"
+    - "simulation"
+    - "mbse"
+    - "jlvc"
   # Minimum AI score to keep (0 = no minimum)
   min_ai_score: 0
   # Keep only top N by score (0 = keep all)
