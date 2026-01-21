@@ -86,15 +86,29 @@ class AIScorer:
         if not text:
             return None, None
 
+        cleaned = text.strip()
+        cleaned = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+
         payload = None
         try:
-            payload = json.loads(text)
+            payload = json.loads(cleaned)
         except json.JSONDecodeError:
             pass
+        if not isinstance(payload, dict):
+            match = re.search(r"\\{.*\\}", cleaned, flags=re.DOTALL)
+            if match:
+                try:
+                    payload = json.loads(match.group(0))
+                except Exception:
+                    payload = None
 
         if isinstance(payload, dict):
+            include = payload.get("include")
+            decision = payload.get("decision")
             score = payload.get("score")
             reason = payload.get("reason")
+            if include is None and isinstance(decision, str):
+                include = decision.strip().lower() in ("include", "keep", "yes", "true")
             try:
                 score = int(score) if score is not None else None
             except (TypeError, ValueError):
@@ -102,11 +116,43 @@ class AIScorer:
             reason_text = (str(reason).strip() if reason else None)
             if reason_text:
                 reason_text = reason_text[: self.max_reasoning_chars]
+            if isinstance(include, bool) and include is False:
+                score = 0
+                if reason_text:
+                    if not reason_text.lower().startswith("exclude"):
+                        reason_text = f"EXCLUDE: {reason_text}"
+                else:
+                    reason_text = "EXCLUDE"
             return score, reason_text
 
-        match = SCORE_PATTERN.search(text)
+        score_match = re.search(r"\"score\"\\s*:\\s*(\\d+)", cleaned, flags=re.IGNORECASE)
+        include_match = re.search(r"\"include\"\\s*:\\s*(true|false)", cleaned, flags=re.IGNORECASE)
+        reason_match = re.search(r"\"reason\"\\s*:\\s*\"(.*?)\"", cleaned, flags=re.DOTALL)
+
+        score = int(score_match.group(1)) if score_match else None
+        include = None
+        if include_match:
+            include = include_match.group(1).lower() == "true"
+        reason_text = reason_match.group(1).strip() if reason_match else None
+        if reason_text:
+            reason_text = reason_text[: self.max_reasoning_chars]
+
+        if include is False:
+            score = 0
+            if reason_text:
+                if not reason_text.lower().startswith("exclude"):
+                    reason_text = f"EXCLUDE: {reason_text}"
+            else:
+                reason_text = "EXCLUDE"
+
+        if score is not None:
+            return score, reason_text
+
+        match = SCORE_PATTERN.search(cleaned)
         score = int(match.group(1)) if match else None
-        reason_text = self._extract_reasoning(text, score)
+        if score is None:
+            return None, None
+        reason_text = self._extract_reasoning(cleaned, score)
         return score, reason_text
 
     def _extract_reasoning(self, text: str, score: Optional[int]) -> Optional[str]:

@@ -5,6 +5,7 @@ Output Writer - Exports job data to JSON and Markdown
 import json
 import shutil
 import logging
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List
@@ -18,6 +19,24 @@ class OutputWriter:
 
     def __init__(self, config):
         self.config = config
+
+    def _format_board_label(self) -> str:
+        boards = self.config.get_job_boards()
+        primary = boards[0] if boards else "jobs"
+        return primary.replace("-", " ").replace("_", " ").title()
+
+    def _pretty_vault_name(self, source_path: Path) -> str:
+        board_label = self._format_board_label()
+        match = re.search(r"jobs_(\d{8})_(\d{6})", source_path.stem)
+        if match:
+            date_raw, time_raw = match.groups()
+            date_label = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:]}"
+            time_label = time_raw[:4]
+        else:
+            now = datetime.now()
+            date_label = now.strftime("%Y-%m-%d")
+            time_label = now.strftime("%H%M")
+        return f"{board_label} Jobs {date_label} {time_label}{source_path.suffix}"
 
     def _ensure_output_dir(self, path: Path) -> None:
         """Create output directory if it doesn't exist"""
@@ -49,9 +68,11 @@ class OutputWriter:
         lines = []
 
         # Header
-        lines.append("# 🔍 Job Search Results\n")
-        lines.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
-        lines.append(f"**Total Jobs:** {len(jobs)}\n")
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        board_label = self._format_board_label()
+        lines.append(f"# {board_label} Jobs — {timestamp}\n")
+        lines.append(f"**Total Jobs:** {len(jobs)}  ")
+        lines.append(f"**Generated:** {timestamp}\n")
 
         # Search queries
         lines.append("## Search Queries\n")
@@ -143,7 +164,7 @@ class OutputWriter:
 
         for file_type, source_path in files.items():
             if source_path and source_path.exists():
-                dest_path = vault_path / source_path.name
+                dest_path = vault_path / self._pretty_vault_name(source_path)
                 shutil.copy2(source_path, dest_path)
                 logger.info(f"Synced to vault: {dest_path}")
                 print(f"📁 Synced to Obsidian: {dest_path}")

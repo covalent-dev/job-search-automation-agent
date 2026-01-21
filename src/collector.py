@@ -358,6 +358,25 @@ class JobCollector:
                 if marker in url:
                     return {"reason": f"url:{marker}", "title": title, "url": url}
 
+            job_page_selectors = [
+                "#jobDescriptionText",
+                "div.jobsearch-JobComponent",
+                "div#jobsearch-ViewjobPaneWrapper",
+                "div.jobsearch-JobInfoHeader-title-container",
+            ]
+            for selector in job_page_selectors:
+                if page.query_selector(selector):
+                    return None
+
+            def _visible(selector: str) -> bool:
+                handle = page.query_selector(selector)
+                if not handle:
+                    return False
+                try:
+                    return handle.is_visible()
+                except Exception:
+                    return True
+
             selector_markers = {
                 "#cf-challenge-running": "selector:#cf-challenge-running",
                 "form#challenge-form": "selector:form#challenge-form",
@@ -368,15 +387,23 @@ class JobCollector:
                 "[data-sitekey]": "selector:data-sitekey",
             }
             for selector, reason in selector_markers.items():
+                if selector in (
+                    "iframe[src*='hcaptcha.com']",
+                    "iframe[src*='recaptcha']",
+                    ".cf-turnstile",
+                    "[data-sitekey]",
+                ):
+                    if _visible(selector):
+                        return {"reason": reason, "title": title, "url": url}
+                    continue
                 if page.query_selector(selector):
                     return {"reason": reason, "title": title, "url": url}
 
             body = (page.inner_text("body") or "").lower()
             body_markers = [
-                "cloudflare",
-                "captcha",
                 "verify you are human",
                 "additional verification required",
+                "please verify you're a human",
             ]
             for marker in body_markers:
                 if marker in body:
