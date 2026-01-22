@@ -16,6 +16,7 @@ class Job(BaseModel):
     location: str
     link: HttpUrl
     description: str = ""
+    description_full: Optional[str] = None
     salary: Optional[str] = None
     job_type: Optional[str] = None
     

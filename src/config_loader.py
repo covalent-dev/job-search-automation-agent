@@ -88,6 +88,30 @@ class ConfigLoader:
     def get_detail_salary_delay_max(self) -> float:
         """Get maximum delay between detail salary fetches in seconds"""
         return float(self.get('search.detail_salary_delay_max', 2.0))
+
+    def is_detail_description_enabled(self) -> bool:
+        """Check if detail description fetch is enabled"""
+        return bool(self.get('search.detail_description_fetch', False))
+
+    def get_detail_description_timeout(self) -> int:
+        """Get detail description fetch timeout in seconds"""
+        return int(self.get('search.detail_description_timeout', 8))
+
+    def get_detail_description_retries(self) -> int:
+        """Get detail description fetch retries"""
+        return int(self.get('search.detail_description_retries', 1))
+
+    def get_detail_description_max_per_query(self) -> int:
+        """Get max detail description fetches per query"""
+        return int(self.get('search.detail_description_max_per_query', 10))
+
+    def get_detail_description_delay_min(self) -> float:
+        """Get minimum delay between detail description fetches in seconds"""
+        return float(self.get('search.detail_description_delay_min', 1.0))
+
+    def get_detail_description_delay_max(self) -> float:
+        """Get maximum delay between detail description fetches in seconds"""
+        return float(self.get('search.detail_description_delay_max', 2.0))
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""

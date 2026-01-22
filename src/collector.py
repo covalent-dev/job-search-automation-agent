@@ -38,17 +38,21 @@ class JobCollector:
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         self.detail_salary_page: Optional[Page] = None
+        self.detail_description_page: Optional[Page] = None
         self.session_file = SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
         self.max_retries = self.config.get_max_retries()
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
+        self.detail_description_cache: dict[str, Optional[str]] = {}
         self.skip_detail_fetches = False
         self.detail_debug_saved = False
+        self.detail_description_debug_saved = False
         self.captcha_debug_saved = False
         self.abort_requested = False
         self.total_jobs_collected = 0
         self.total_jobs_with_salary = 0
         self.detail_fetch_count_total = 0
+        self.detail_description_count_total = 0
         self.first_captcha_fetch_count: Optional[int] = None
         self.captcha_events: list[dict] = []
         self.captcha_consecutive = 0
@@ -563,6 +567,104 @@ class JobCollector:
         self.detail_salary_cache[url] = (salary, job_type)
         return salary, job_type
 
+    def _fetch_detail_description(self, url: str) -> Optional[str]:
+        if not self.context or not url:
+            return None
+        if self.skip_detail_fetches:
+            return None
+        if url in self.detail_description_cache:
+            return self.detail_description_cache[url]
+
+        timeout_ms = self.config.get_detail_description_timeout() * 1000
+        retries = self.config.get_detail_description_retries()
+        delay_min = self.config.get_detail_description_delay_min()
+        delay_max = self.config.get_detail_description_delay_max()
+
+        description = None
+        attempt = 0
+        selectors = [
+            "#jobDescriptionText",
+            "[data-testid='jobDescriptionText']",
+            ".jobsearch-jobDescriptionText",
+            "#jobDetailsSection",
+            "[data-testid='jobDetailsSection']",
+        ]
+
+        while attempt < retries:
+            try:
+                attempt += 1
+                if self.detail_description_page is not None and self.detail_description_page.is_closed():
+                    self.detail_description_page = None
+                if self.detail_description_page is None:
+                    self.detail_description_page = self.context.new_page()
+                    self.detail_description_page.set_default_timeout(timeout_ms)
+                    self.detail_description_page.set_default_navigation_timeout(timeout_ms)
+                detail_page = self.detail_description_page
+                if delay_max > 0:
+                    time.sleep(random.uniform(delay_min, delay_max))
+                detail_page.goto(url, wait_until="domcontentloaded")
+                try:
+                    detail_page.wait_for_selector(", ".join(selectors), timeout=3000)
+                except Exception:
+                    pass
+                captcha_detection = self._is_captcha_page(detail_page)
+                if captcha_detection:
+                    self.captcha_consecutive += 1
+                    logger.warning(
+                        "Detail description fetch blocked by captcha (reason=%s, title=%s, url=%s)",
+                        captcha_detection["reason"],
+                        captcha_detection["title"],
+                        captcha_detection["url"],
+                    )
+                    self._captcha_backoff()
+                    action = self._handle_captcha_prompt(url)
+                    if action == "abort":
+                        raise CaptchaAbort("User requested abort after captcha")
+                    if action == "skip":
+                        return None
+                    if action == "retry":
+                        self.detail_description_page = None
+                        attempt = max(attempt - 1, 0)
+                        continue
+                else:
+                    self.captcha_consecutive = 0
+
+                for selector in selectors:
+                    elem = detail_page.query_selector(selector)
+                    text = self._extract_text(elem)
+                    if text and (not description or len(text) > len(description)):
+                        description = text
+
+                if not description and not self.detail_description_debug_saved:
+                    try:
+                        Path("output").mkdir(parents=True, exist_ok=True)
+                        detail_page.screenshot(path="output/detail_description_debug.png")
+                        Path("output/detail_description_debug.html").write_text(
+                            detail_page.content(), encoding="utf-8"
+                        )
+                        self.detail_description_debug_saved = True
+                    except Exception:
+                        pass
+
+                if description:
+                    break
+
+            except Exception as exc:
+                if isinstance(exc, CaptchaAbort):
+                    raise
+                if "Target page, context or browser has been closed" in str(exc):
+                    self.detail_description_page = None
+                logger.warning(
+                    "Detail description fetch failed (attempt %s/%s): %s",
+                    attempt,
+                    retries,
+                    exc,
+                )
+                self._random_delay()
+
+        self.detail_description_cache[url] = description
+        return description
+
 
     def _safe_goto(self, url: str) -> bool:
         """Navigate with retry for flaky pages."""
@@ -666,6 +768,11 @@ class JobCollector:
         except Exception:
             logger.debug("Detail salary page close failed", exc_info=True)
         try:
+            if self.detail_description_page:
+                self.detail_description_page.close()
+        except Exception:
+            logger.debug("Detail description page close failed", exc_info=True)
+        try:
             if self.context:
                 self.context.close()
         except Exception:
@@ -692,6 +799,9 @@ class JobCollector:
         max_detail_fetches = self.config.get_detail_salary_max_per_query()
         unlimited_detail_fetches = max_detail_fetches <= 0
         detail_fetches = 0
+        max_detail_description_fetches = self.config.get_detail_description_max_per_query()
+        unlimited_detail_description_fetches = max_detail_description_fetches <= 0
+        detail_description_fetches = 0
 
         last_first_link = None
         self.current_query = str(query)
@@ -793,6 +903,28 @@ class JobCollector:
                                 if detail_job_type:
                                     job.job_type = detail_job_type
                                 detail_fetches += 1
+
+                            if (
+                                self.config.is_detail_description_enabled()
+                                and job.link
+                                and (unlimited_detail_description_fetches or detail_description_fetches < max_detail_description_fetches)
+                            ):
+                                if unlimited_detail_description_fetches:
+                                    fetch_label = f"{detail_description_fetches + 1}/∞"
+                                else:
+                                    fetch_label = f"{detail_description_fetches + 1}/{max_detail_description_fetches}"
+                                self.detail_description_count_total += 1
+                                print(f"\r   Detail description: {fetch_label}", end="", flush=True)
+                                logger.info(
+                                    "Detail description fetch %s: %s",
+                                    fetch_label,
+                                    job.link,
+                                )
+                                detail_description = self._fetch_detail_description(str(job.link))
+                                print("")
+                                if detail_description:
+                                    job.description_full = detail_description
+                                detail_description_fetches += 1
 
                             seen_links.add(str(job.link))
                             jobs.append(job)

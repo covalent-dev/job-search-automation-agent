@@ -33,6 +33,14 @@ search:
   detail_salary_max_per_query: 0
   detail_salary_delay_min: 1.5
   detail_salary_delay_max: 2.5
+
+  # Detail page description fetch (full descriptions; slower)
+  detail_description_fetch: false
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.5
+  detail_description_delay_max: 2.5
   
   # Job boards to search
   job_boards:
@@ -73,7 +81,7 @@ browser:
 # AI Filtering (bonus feature - Phase 5)
 ai_filter:
   # Enable AI scoring (requires local LLM)
-  enabled: false
+  enabled: true
   
   # Model to use (Ollama)
   model: "deepseek-coder-v2:latest"
