@@ -1,0 +1,138 @@
+search:
+  keywords:
+  - AI engineer
+  - AI/ML engineer
+  - machine learning engineer
+  - AI systems engineer
+  - AI infrastructure engineer
+  - AI platform engineer
+  - MLOps engineer
+  - LLM engineer
+  - LLM ops engineer
+  - RAG engineer
+  - generative AI engineer
+  - AI automation engineer
+  location: Remote
+  max_results_per_search: 50
+  max_pages: 2
+  detail_salary_fetch: true
+  detail_salary_timeout: 9
+  detail_salary_retries: 1
+  detail_salary_max_per_query: 0
+  detail_salary_delay_min: 1.5
+  detail_salary_delay_max: 2.5
+  detail_description_fetch: false
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.5
+  detail_description_delay_max: 2.5
+  job_boards:
+  - indeed
+output:
+  json_file: output/jobs_{timestamp}.json
+  markdown_file: output/jobs_{timestamp}.md
+  use_timestamp: true
+  vault_sync:
+    enabled: true
+    vault_path: /Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/indeed
+browser:
+  headless: false
+  min_delay: 0.5
+  max_delay: 2.0
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  channel: ''
+  executable_path: ''
+  use_stealth: false
+ai_filter:
+  enabled: true
+  model: deepseek-coder-v2:latest
+  scoring_prompt: 'You are filtering + scoring jobs for fit with the target search
+    intent.
+
+    First decide include/exclude. If exclude, score must be 0.
+
+    Return ONLY valid JSON with this schema:
+
+    {{"include": <true|false>, "score": <0-10 integer>, "reason": "<short phrase>"}}
+
+    Keep reason under 12 words. No extra text. No markdown/code fences.
+
+    Example: {{"include": true, "score": 7, "reason": "Strong ML fit"}}
+
+    Exclude if the role is clearly off-target (wrong domain, senior-only, unrelated
+    function).
+
+    Job: {title} at {company} ({location})
+
+    Description: {description}
+
+    '
+  max_retries: 2
+  max_reasoning_chars: 120
+  include_reasoning: true
+  debug: false
+post_run:
+  include_keywords:
+  - ai
+  - ml
+  - machine learning
+  - deep learning
+  - llm
+  - rag
+  - mlops
+  - genai
+  - generative ai
+  - ai engineer
+  - ai/ml
+  - ai systems
+  - ai infrastructure
+  - ai platform
+  title_role_keywords:
+  - engineer
+  - scientist
+  - research
+  - ml
+  - ai
+  - data
+  - mlops
+  - llm
+  - nlp
+  - vision
+  exclude_keywords:
+  - director
+  - vp
+  - therapist
+  - nurse
+  - physician
+  - medical
+  - clinical
+  - patient
+  - accountant
+  - bookkeeper
+  - payroll
+  - customer service
+  - call center
+  - sales
+  - retail
+  - teacher
+  - interpreter
+  - underwriter
+  - claims
+  - tax
+  - preparer
+  - accounting
+  - simulation
+  - mbse
+  - jlvc
+  min_ai_score: 0
+  top_n: 0
+dedupe:
+  enabled: false
+  hash_file: output/dedupe_hashes.jsonl
+logging:
+  level: INFO
+  log_file: logs/job_bot_{timestamp}.log

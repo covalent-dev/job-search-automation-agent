@@ -1,0 +1,102 @@
+# Job Bot Configuration v0.1 (Headless Safe)
+# Slower, lower-volume preset to reduce risk when testing headless
+
+search:
+  # Job search keywords - will search for each separately
+  keywords:
+    - "AI engineer"
+    - "AI/ML engineer"
+    - "machine learning engineer"
+    - "AI systems engineer"
+    - "AI infrastructure engineer"
+    - "AI platform engineer"
+    - "MLOps engineer"
+    - "LLM engineer"
+    - "LLM ops engineer"
+    - "RAG engineer"
+    - "generative AI engineer"
+    - "AI automation engineer"
+  
+  # Primary location filter
+  location: "Remote"
+  
+  # Maximum results to collect per keyword search
+  max_results_per_search: 25
+  
+  # Max pages to paginate per keyword search (0 = unlimited, auto-stop)
+  max_pages: 1
+
+  # Detail page salary fetch (slower but more accurate)
+  detail_salary_fetch: false
+  detail_salary_timeout: 8
+  detail_salary_retries: 1
+  detail_salary_max_per_query: 3
+  detail_salary_delay_min: 3.0
+  detail_salary_delay_max: 6.0
+  
+  # Job boards to search
+  job_boards:
+    - "linkedin"
+
+# Output settings
+output:
+  # Where to save results
+  json_file: "output/jobs_{timestamp}.json"
+  markdown_file: "output/jobs_{timestamp}.md"
+
+  # Include timestamp in filenames (true/false)
+  use_timestamp: true
+
+  # Obsidian vault sync (optional - copies output to vault)
+  vault_sync:
+    enabled: true
+    vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/linkedin"
+
+# Browser behavior
+browser:
+  # Headless mode (true = invisible browser, false = see what's happening)
+  headless: true
+  
+  # Delays to appear more human-like (in seconds)
+  min_delay: 2.0
+  max_delay: 5.0
+  
+  # Browser timeout (seconds)
+  page_timeout: 45
+  navigation_timeout: 60
+  launch_timeout: 90
+  max_retries: 1
+  channel: ""
+  executable_path: ""
+  use_stealth: false
+
+# AI Filtering (bonus feature - Phase 5)
+ai_filter:
+  # Enable AI scoring (requires local LLM)
+  enabled: false
+  
+  # Model to use (Ollama)
+  model: "deepseek-coder-v2:latest"
+  
+  # Prompt for scoring
+  scoring_prompt: |
+    You are scoring a job for junior-friendliness from 1 to 10.
+    Return ONLY valid JSON with this schema:
+    {"score": <1-10 integer>, "reason": "<short phrase>"}
+    Keep reason under 12 words. No extra text.
+    Job: {title} at {company} ({location})
+    Description: {description}
+  max_retries: 2
+  max_reasoning_chars: 120
+  include_reasoning: true
+  debug: false
+
+# Cross-run de-duplication
+dedupe:
+  enabled: false
+  hash_file: "output/dedupe_hashes.jsonl"
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/job_bot_{timestamp}.log"

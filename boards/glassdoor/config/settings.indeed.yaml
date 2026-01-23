@@ -1,4 +1,4 @@
-# Job Bot Configuration v0.1
+# Job Bot Configuration v0.1 (Indeed)
 # Search parameters for automated job hunting
 
 search:
@@ -33,14 +33,6 @@ search:
   detail_salary_max_per_query: 0
   detail_salary_delay_min: 1.5
   detail_salary_delay_max: 2.5
-
-  # Detail page description fetch (full descriptions; slower)
-  detail_description_fetch: false
-  detail_description_timeout: 12
-  detail_description_retries: 1
-  detail_description_max_per_query: 0
-  detail_description_delay_min: 1.5
-  detail_description_delay_max: 2.5
   
   # Job boards to search
   job_boards:
@@ -51,6 +43,8 @@ output:
   # Where to save results
   json_file: "output/jobs_{timestamp}.json"
   markdown_file: "output/jobs_{timestamp}.md"
+  summary_file: "output/run_summary_{timestamp}.json"
+  config_snapshot_file: "output/config_snapshot_{timestamp}.yaml"
 
   # Include timestamp in filenames (true/false)
   use_timestamp: true
@@ -58,7 +52,7 @@ output:
   # Obsidian vault sync (optional - copies output to vault)
   vault_sync:
     enabled: true
-    vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/indeed"
+    vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/glassdoor"
 
 # Browser behavior
 browser:
@@ -81,92 +75,23 @@ browser:
 # AI Filtering (bonus feature - Phase 5)
 ai_filter:
   # Enable AI scoring (requires local LLM)
-  enabled: true
+  enabled: false
   
   # Model to use (Ollama)
   model: "deepseek-coder-v2:latest"
   
   # Prompt for scoring
   scoring_prompt: |
-    You are filtering + scoring jobs for fit with the target search intent.
-    First decide include/exclude. If exclude, score must be 0.
+    You are scoring a job for junior-friendliness from 1 to 10.
     Return ONLY valid JSON with this schema:
-    {{"include": <true|false>, "score": <0-10 integer>, "reason": "<short phrase>"}}
-    Keep reason under 12 words. No extra text. No markdown/code fences.
-    Example: {{"include": true, "score": 7, "reason": "Strong ML fit"}}
-    Exclude if the role is clearly off-target (wrong domain, senior-only, unrelated function).
+    {"score": <1-10 integer>, "reason": "<short phrase>"}
+    Keep reason under 12 words. No extra text.
     Job: {title} at {company} ({location})
     Description: {description}
   max_retries: 2
   max_reasoning_chars: 120
   include_reasoning: true
   debug: false
-
-# Post-run filtering + scoring (used by post_run_sorter.py)
-post_run:
-  # Keep jobs that match at least one include keyword (case-insensitive)
-  include_keywords:
-    - "ai"
-    - "ml"
-    - "machine learning"
-    - "deep learning"
-    - "llm"
-    - "rag"
-    - "mlops"
-    - "genai"
-    - "generative ai"
-    - "ai engineer"
-    - "ai/ml"
-    - "ai systems"
-    - "ai infrastructure"
-    - "ai platform"
-  # If a job only matches include keywords in the description,
-  # require the title to contain at least one of these role keywords.
-  title_role_keywords:
-    - "engineer"
-    - "scientist"
-    - "research"
-    - "ml"
-    - "ai"
-    - "data"
-    - "mlops"
-    - "llm"
-    - "nlp"
-    - "vision"
-  # Drop jobs that contain any exclude keyword (case-insensitive)
-  exclude_keywords:
-    - "senior"
-    - "staff"
-    - "principal"
-    - "director"
-    - "vp"
-    - "therapist"
-    - "nurse"
-    - "physician"
-    - "medical"
-    - "clinical"
-    - "patient"
-    - "accountant"
-    - "bookkeeper"
-    - "payroll"
-    - "customer service"
-    - "call center"
-    - "sales"
-    - "retail"
-    - "teacher"
-    - "interpreter"
-    - "underwriter"
-    - "claims"
-    - "tax"
-    - "preparer"
-    - "accounting"
-    - "simulation"
-    - "mbse"
-    - "jlvc"
-  # Minimum AI score to keep (0 = no minimum)
-  min_ai_score: 0
-  # Keep only top N by score (0 = keep all)
-  top_n: 0
 
 # Cross-run de-duplication
 dedupe:

@@ -1,25 +1,52 @@
-# OS
-.DS_Store
-
 # Python
 __pycache__/
 *.py[cod]
-.venv/
+*$py.class
+*.so
+.Python
+env/
 venv/
-.env
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Session (contains cookies - don't commit)
-config/session.json
-# Browser profile is stored in ~/.job-search-automation/
+# Playwright
+.pytest_cache/
 
-# Output (generated files)
+# Output
 output/
 logs/
+*.log
 
-# Scratch
-scratch/
+# Config overrides (keep templates)
+config/session.json
+config/*.local.yaml
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Browser profiles (stored in ~/.job-search-automation/)
+browser-profile/
+*-profile/
