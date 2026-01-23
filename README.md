@@ -1,4 +1,4 @@
-# Job Search Automation
+# Job Search Automation Agent v0.2.0
 
 Scrapes jobs from multiple boards, scores them with a local LLM, and syncs everything to Obsidian. Currently supports Indeed, Glassdoor, LinkedIn, RemoteJobs, and RemoteAfrica.
 
