@@ -35,6 +35,9 @@ logs/
 # Config overrides (keep templates)
 config/session.json
 config/*.local.yaml
+**/config/session.json
+**/config/session.json.*
+**/config/*.local.yaml
 
 # IDE
 .vscode/
