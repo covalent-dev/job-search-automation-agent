@@ -1,8 +1,6 @@
 # Job Search Automation
 
-Automated job collection and AI-powered filtering across multiple job boards.
-
-**Current Boards:** Indeed, Glassdoor, LinkedIn, RemoteJobs, RemoteAfrica
+Scrapes jobs from multiple boards, scores them with a local LLM, and syncs everything to Obsidian. Currently supports Indeed, Glassdoor, LinkedIn, RemoteJobs, and RemoteAfrica.
 
 ## Quick Start
 
@@ -33,14 +31,13 @@ job-search-automation/
 └── requirements.txt
 ```
 
-## Features
+## What It Does
 
-- **Multi-board support**: 5 boards, easily extensible to 30+
-- **Browser sandboxing**: Isolated profiles per board (prevents session bleed)
-- **AI scoring**: Local LLM via Ollama for job ranking
-- **Salary extraction**: Board-specific selectors for accurate salary data
-- **Obsidian integration**: Auto-sync to vault for easy browsing
-- **Smart filtering**: Rule-based + AI scoring for relevant jobs only
+This is a monorepo that handles scraping from 5 different job boards. Each board gets its own isolated browser profile to avoid session conflicts. Jobs get scored by a local LLM running through Ollama, and everything syncs to an Obsidian vault for easy review.
+
+Salary extraction uses board-specific selectors since every site structures their data differently. The filtering happens in two stages: first with rule-based keywords, then with AI scoring to rank what's actually relevant.
+
+The architecture is designed to scale to 30+ boards without turning into a maintenance nightmare.
 
 ## Setup
 
@@ -81,15 +78,12 @@ post_run:
   exclude_keywords:
     - "therapist"
     - "nurse"
-    # (removed "senior", "staff", "principal" to avoid filtering good matches)
+    # Note: Don't add "senior", "staff", "principal" here - kills 90% of good matches
 ```
 
-## Adding New Boards
+## Quick Board Setup
 
-1. Copy `boards/template/` to `boards/newboard/`
-2. Update `config/settings.yaml` (set `job_boards: ["newboard"]`)
-3. Implement board-specific selectors in `src/collector.py`
-4. Test: `./scripts/run_board.sh newboard`
+Copy an existing board directory, update the config with your search keywords and location, then implement the site-specific selectors in `collector.py`. Test with `./scripts/run_board.sh <boardname>` on a small sample before running full collection.
 
 ## Output
 
@@ -97,30 +91,19 @@ post_run:
 - **Markdown**: `boards/<board>/output/jobs_TIMESTAMP.md`
 - **Obsidian**: `~/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/<board>/`
 
-## Architecture
+## How It Works
 
-**Shared Core** (`shared/`):
-- `main.py` - Entry point
-- `ai_scorer.py` - LLM scoring via Ollama
-- `post_run_sorter.py` - Rule filter + AI scoring on saved JSON
-- `models.py` - Pydantic data models
-- `output_writer.py` - JSON/Markdown export
-- `setup_session.py` - Captcha solver (manual)
+The `shared/` directory contains all the common code - AI scoring, data models, output writing, etc. Each board in `boards/` only needs to implement its own `collector.py` with site-specific selectors. Everything else is shared.
 
-**Board-Specific** (`boards/<name>/src/`):
-- `collector.py` - Playwright scraping with board-specific selectors
+The scraper uses Playwright for browser automation and handles all the usual annoyances (captchas, rate limits, session management). When you run a board, it collects jobs, scores them with the local LLM, filters out noise, and exports both JSON and Markdown.
 
-## Recon Workflow
+## Adding a New Board
 
-Before enabling detailed scraping (salary, descriptions), perform recon:
+Before you enable salary or description scraping for a new board, you need to do recon. Job sites have multiple layout variations (different HTML structures for the same data), so you can't just guess at selectors.
 
-1. Identify layout variations (Case 0, Case 1, Case 2...)
-2. Document HTML structure (screenshot + selectors)
-3. Update `collector.py` with selectors
-4. Test on 5-10 jobs
-5. Enable in config once stable
+The process: identify each layout case, document the HTML structure with screenshots, implement selectors that cover all cases, then test on a small sample. Once you hit 90%+ coverage, enable it in the config. Otherwise you'll just be debugging broken selectors constantly.
 
-See: `docs/RECON-TEMPLATE.md`
+Check the recon workflow doc for the full breakdown.
 
 ## Status
 
@@ -135,7 +118,3 @@ See: `docs/RECON-TEMPLATE.md`
 ## Version
 
 v0.2.0 - Monorepo structure with 5 boards
-
----
-
-Built with Claude Code during Month 1 of 24-month tech progression.
