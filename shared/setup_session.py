@@ -32,7 +32,7 @@ def setup_session():
     # Create profile directory
     USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    config = load_config()
+    config = load_config(f"boards/{BOARD_NAME}/config/settings.yaml")
     channel = config.get_browser_channel() or None
     executable_path = config.get_browser_executable_path() or None
     launch_timeout = config.get_launch_timeout()
