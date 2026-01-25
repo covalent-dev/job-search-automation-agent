@@ -22,7 +22,8 @@ SESSION_FILE = Path("config/session.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_NAME = REPO_ROOT.name
 PROFILE_ROOT = Path.home() / ".job-search-automation"
-USER_DATA_DIR = PROFILE_ROOT / f"{REPO_NAME}-profile"
+# Match the profile naming used by setup_session.py
+USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
 
 
 class CaptchaAbort(Exception):
