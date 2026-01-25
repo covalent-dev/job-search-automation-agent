@@ -22,7 +22,8 @@ SESSION_FILE = Path("config/session.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_NAME = REPO_ROOT.name
 PROFILE_ROOT = Path.home() / ".job-search-automation"
-USER_DATA_DIR = PROFILE_ROOT / f"{REPO_NAME}-profile"
+# Match the profile naming used by setup_session.py
+USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
 
 
 class CaptchaAbort(Exception):
@@ -511,14 +512,45 @@ class JobCollector:
         job_board = (self.current_board or "").lower()
         if job_board == "remotejobs":
             salary_selectors = [
+                # Class-based patterns
                 ".salary",
                 ".job-salary",
+                ".jobSalary",
+                "[class*='salary']",
+                "[class*='Salary']",
+                "[class*='pay']",
+                "[class*='Pay']",
+                "[class*='compensation']",
+                "[class*='Compensation']",
+                # Data attribute patterns
                 "[data-testid='salary']",
+                "[data-testid='jobSalary']",
+                "[data-test='salary']",
+                # Section-based patterns
+                "section[class*='salary']",
+                "div[class*='salary']",
+                # JSON-LD will also be checked
             ]
             detail_section_selectors = [
-                "section",
+                # Class-based patterns
                 "div.job-description",
+                "div.jobDescription",
                 "div.description",
+                "[class*='job-description']",
+                "[class*='jobDescription']",
+                "[class*='JobDescription']",
+                "[class*='description']",
+                "[class*='Description']",
+                "[class*='details']",
+                "[class*='Details']",
+                # Data attribute patterns
+                "[data-testid='job-description']",
+                "[data-testid='jobDescription']",
+                "[data-test='job-description']",
+                # Semantic elements
+                "article",
+                "main",
+                "section",
             ]
         else:
             salary_selectors = [
@@ -678,11 +710,28 @@ class JobCollector:
         job_board = (self.current_board or "").lower()
         if job_board == "remotejobs":
             selectors = [
+                # Class-based patterns
                 "div.job-description",
                 ".job-description",
+                ".jobDescription",
                 "section.job-description",
                 "div.description",
+                # Partial class matching
+                "div[class*='job-description']",
+                "div[class*='jobDescription']",
+                "div[class*='JobDescription']",
                 "div[class*='description']",
+                "div[class*='Description']",
+                "[class*='content']",
+                "[class*='Content']",
+                # Data attribute patterns
+                "[data-testid='job-description']",
+                "[data-testid='jobDescription']",
+                "[data-testid='description']",
+                "[data-test='job-description']",
+                # Semantic elements
+                "article",
+                "main",
             ]
         else:
             selectors = [
@@ -785,10 +834,34 @@ class JobCollector:
         job_board = (self.current_board or "").lower()
         if job_board == "remotejobs":
             selectors = [
+                # Semantic rel attribute
                 "a[rel='next']",
+                # Aria labels
                 "a[aria-label='Next']",
+                "a[aria-label='Next page']",
+                "a[aria-label='Next Page']",
                 "button[aria-label='Next']",
+                "button[aria-label='Next page']",
+                "button[aria-label='Next Page']",
+                # Class-based patterns
                 "a.pagination-next",
+                "a.next",
+                "button.next",
+                "[class*='pagination'] a[class*='next']",
+                "[class*='Pagination'] a[class*='next']",
+                "[class*='pagination'] button[class*='next']",
+                "[class*='pager'] a[class*='next']",
+                # Data attribute patterns
+                "a[data-testid='pagination-next']",
+                "button[data-testid='pagination-next']",
+                "[data-testid='next-page']",
+                # Text-based patterns (use :has-text carefully)
+                "a:has-text('Next')",
+                "button:has-text('Next')",
+                "a:has-text('›')",
+                "button:has-text('›')",
+                "a:has-text('»')",
+                "button:has-text('»')",
             ]
         else:
             selectors = [
@@ -905,16 +978,59 @@ class JobCollector:
         selectors = []
         if job_board == "remotejobs":
             selectors = [
+                # Primary: ID-based selectors (original structure)
                 "div[id^='job-card-wrapper-']",
                 "a[id^='job-card-title-']",
+                # Semantic HTML patterns
+                "article[data-job-id]",
+                "article[data-id]",
+                "li[data-job-id]",
+                "li[data-id]",
+                "div[data-job-id]",
+                "div[data-id]",
+                # Common React job board patterns
                 "article.job",
                 "article.job-card",
+                "article.JobCard",
+                "article[class*='job']",
+                "article[class*='Job']",
+                # Div-based cards
                 "div.job-card",
-                "div.job",
-                "li.job",
-                "a.job-card",
-                "div[data-testid='job-card']",
+                "div.JobCard",
+                "div[class*='JobCard']",
+                "div[class*='jobCard']",
                 "div[class*='job-card']",
+                "div.job",
+                # List-based structures
+                "li.job",
+                "li.job-card",
+                "li[class*='job']",
+                "li[class*='Job']",
+                # Link-based cards
+                "a.job-card",
+                "a[class*='job-card']",
+                "a[class*='JobCard']",
+                # Data attribute patterns
+                "div[data-testid='job-card']",
+                "div[data-testid='jobCard']",
+                "div[data-testid='job-listing']",
+                "div[data-testid='jobListing']",
+                "[data-testid*='job']",
+                # Section-based patterns
+                "section[class*='job'] > div",
+                "section[class*='Job'] > div",
+                "main[class*='job'] article",
+                "main[class*='Job'] article",
+                # Grid/list container children
+                "ul[class*='job'] > li",
+                "ul[class*='Job'] > li",
+                "div[class*='jobs'] > div",
+                "div[class*='Jobs'] > div",
+                "div[class*='listing'] > div",
+                "div[class*='Listing'] > div",
+                # Generic fallbacks
+                "div[class*='card'][class*='job']",
+                "div[class*='Card'][class*='Job']",
             ]
         else:
             selectors = [
@@ -1187,11 +1303,31 @@ class JobCollector:
             title = self._first_text(
                 card,
                 [
+                    # Original ID-based selector
                     "a[id^='job-card-title-']",
+                    # Standard heading patterns
+                    "h1 a",
                     "h2 a",
+                    "h3 a",
+                    "h1",
                     "h2",
+                    "h3",
+                    # Data attribute patterns
                     "a[data-testid='job-title']",
+                    "[data-testid='job-title']",
+                    "[data-testid='jobTitle']",
+                    "[data-test='job-title']",
+                    # Class-based patterns
                     "a.job-title",
+                    ".job-title",
+                    ".jobTitle",
+                    "[class*='jobTitle']",
+                    "[class*='job-title']",
+                    "[class*='JobTitle']",
+                    "a[class*='title']",
+                    # Semantic link (last resort)
+                    "a[href*='/job/']",
+                    "a[href*='/jobs/']",
                     "a",
                 ],
             )
@@ -1200,10 +1336,24 @@ class JobCollector:
             company = self._first_text(
                 card,
                 [
+                    # Class-based patterns
                     ".company",
                     ".company-name",
+                    ".companyName",
+                    "[class*='company']",
+                    "[class*='Company']",
+                    "[class*='employer']",
+                    "[class*='Employer']",
+                    # Data attribute patterns
                     "[data-testid='company-name']",
+                    "[data-testid='companyName']",
+                    "[data-testid='company']",
+                    "[data-test='company-name']",
                     "[data-company]",
+                    # Semantic patterns
+                    "span[class*='company']",
+                    "div[class*='company']",
+                    "p[class*='company']",
                 ],
             )
             company = company or "Unknown Company"
@@ -1211,22 +1361,50 @@ class JobCollector:
             location = self._first_text(
                 card,
                 [
+                    # Class-based patterns (including hashed class from original)
                     "span[class*='location']",
+                    "div[class*='location']",
+                    "span[class*='Location']",
+                    "div[class*='Location']",
                     "span[class*='fxYdFy']",
                     ".location",
                     ".job-location",
+                    ".jobLocation",
+                    # Data attribute patterns
                     "[data-testid='job-location']",
+                    "[data-testid='jobLocation']",
+                    "[data-testid='location']",
+                    "[data-test='location']",
                     "[data-location]",
+                    # Icon-adjacent text patterns
+                    "[class*='geo']",
+                    "[class*='place']",
+                    "[class*='remote']",
+                    "[class*='Remote']",
                 ],
             )
-            location = location or "Unknown Location"
+            location = location or "Remote"
 
             link_elem = self._first_element(
                 card,
                 [
+                    # Original ID-based selector
                     "a[id^='job-card-title-']",
-                    "a.job-link",
+                    # Data attribute patterns
                     "a[data-testid='job-link']",
+                    "a[data-testid='jobLink']",
+                    "a[data-test='job-link']",
+                    # Class-based patterns
+                    "a.job-link",
+                    "a.jobLink",
+                    "a[class*='job-link']",
+                    "a[class*='jobLink']",
+                    "a[class*='title']",
+                    # URL pattern matching
+                    "a[href*='/job/']",
+                    "a[href*='/jobs/']",
+                    "a[href*='/remote-']",
+                    # Generic link fallback
                     "a",
                 ],
             )
@@ -1239,10 +1417,26 @@ class JobCollector:
             salary_text = self._first_text(
                 card,
                 [
+                    # Original tag-based selector
                     "li[class*='tag-mint']",
+                    "span[class*='tag-mint']",
+                    # Class-based patterns
                     ".salary",
                     ".job-salary",
+                    ".jobSalary",
+                    "[class*='salary']",
+                    "[class*='Salary']",
+                    "[class*='pay']",
+                    "[class*='Pay']",
+                    "[class*='compensation']",
+                    "[class*='Compensation']",
+                    # Data attribute patterns
                     "[data-testid='salary']",
+                    "[data-testid='jobSalary']",
+                    "[data-test='salary']",
+                    # Currency symbol patterns (look for $ € £)
+                    "span:has-text('$')",
+                    "div:has-text('$')",
                 ],
             )
             salary, job_type = self._classify_attribute_text(salary_text)
@@ -1251,7 +1445,26 @@ class JobCollector:
                 tag_text = self._first_text(
                     card,
                     [
+                        # Original tag-based selector
                         "li[class*='tag-candy']",
+                        "span[class*='tag-candy']",
+                        # Class-based patterns
+                        "[class*='job-type']",
+                        "[class*='jobType']",
+                        "[class*='JobType']",
+                        "[class*='employment']",
+                        "[class*='Employment']",
+                        # Data attribute patterns
+                        "[data-testid='job-type']",
+                        "[data-testid='jobType']",
+                        "[data-test='job-type']",
+                        # Badge/tag patterns
+                        "[class*='badge']",
+                        "[class*='Badge']",
+                        "[class*='tag']",
+                        "[class*='Tag']",
+                        "[class*='chip']",
+                        "[class*='Chip']",
                     ],
                 )
                 _, found_job_type = self._classify_attribute_text(tag_text)
@@ -1261,21 +1474,57 @@ class JobCollector:
             description = self._first_text(
                 card,
                 [
+                    # Original ID-based selector
                     "p[id^='job-card-desc-']",
+                    # Class-based patterns
                     ".description",
                     ".snippet",
                     ".job-snippet",
+                    ".jobSnippet",
+                    ".job-description",
+                    ".jobDescription",
+                    "[class*='description']",
+                    "[class*='Description']",
+                    "[class*='snippet']",
+                    "[class*='Snippet']",
+                    "[class*='summary']",
+                    "[class*='Summary']",
+                    "[class*='excerpt']",
+                    "[class*='Excerpt']",
+                    # Data attribute patterns
                     "[data-testid='job-snippet']",
+                    "[data-testid='jobSnippet']",
+                    "[data-testid='description']",
+                    "[data-test='job-description']",
+                    # Semantic elements
+                    "p",
                 ],
             )
 
             date_posted = self._first_text(
                 card,
                 [
+                    # Semantic time element
                     "time",
+                    "time[datetime]",
+                    # Class-based patterns
                     ".date",
                     ".posted",
+                    ".posted-date",
+                    ".postedDate",
+                    "[class*='date']",
+                    "[class*='Date']",
+                    "[class*='posted']",
+                    "[class*='Posted']",
+                    "[class*='time']",
+                    "[class*='Time']",
+                    "[class*='ago']",
+                    "[class*='Ago']",
+                    # Data attribute patterns
                     "[data-testid='date-posted']",
+                    "[data-testid='datePosted']",
+                    "[data-testid='posted']",
+                    "[data-test='date']",
                 ],
             )
 
