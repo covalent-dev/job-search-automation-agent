@@ -206,14 +206,17 @@ Don't run `python3 shared/main.py` directly.
 
 ## Available Boards
 
-| Board | Status | Salary | Descriptions | AI Scoring |
-|-------|--------|--------|--------------|------------|
-| Indeed | ✅ Working | ✅ | ❌ | ✅ |
-| Glassdoor | ✅ Working | ✅ (90%+) | ❌ | ✅ |
-| LinkedIn | ✅ Working | ✅ | ❌ | ✅ |
-| RemoteJobs | ✅ Working | ✅ | ✅ | ✅ |
-| RemoteAfrica | ✅ Working | ✅ | ❌ | ✅ |
+| Board | Status | Salary | Descriptions | Bot Detection Notes |
+|-------|--------|--------|--------------|---------------------|
+| RemoteJobs | ✅ Working | ✅ 60% | ✅ 100% | None — stable |
+| Glassdoor | ✅ Working | ✅ 90%+ | ✅ Enabled | Minimal detection |
+| LinkedIn | ✅ Working | ✅ 66% | ❌ Needs work | reCAPTCHA eliminated with profile |
+| Indeed | ✅ Working | ✅ Partial | ❌ Disabled | ~30 detail fetches per session before Cloudflare |
+| RemoteAfrica | ✅ Working | ✅ 20% | ✅ 90% | Cloudflare RUM observed |
 
 Legend:
 - ✅ = Feature enabled and working
-- ❌ = Feature disabled or pending validation
+- ❌ = Feature disabled or needs implementation
+- Salary/Description percentages indicate extraction coverage
+
+**Note:** Browser profile setup is critical for avoiding bot detection. Without the authenticated profile, LinkedIn triggers reCAPTCHA and Indeed blocks all detail page fetches.
