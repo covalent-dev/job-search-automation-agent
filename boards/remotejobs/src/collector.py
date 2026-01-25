@@ -532,25 +532,19 @@ class JobCollector:
                 # JSON-LD will also be checked
             ]
             detail_section_selectors = [
-                # Class-based patterns
+                # Indeed detail page selectors (remotejobs links to Indeed)
+                "#jobDescriptionText",
+                ".jobsearch-JobComponent-description",
+                "#jobDetailsSection",
+                "[data-testid='jobDetailsSection']",
+                "[data-testid='jobDescriptionText']",
+                # Generic fallbacks
                 "div.job-description",
                 "div.jobDescription",
-                "div.description",
                 "[class*='job-description']",
                 "[class*='jobDescription']",
-                "[class*='JobDescription']",
-                "[class*='description']",
-                "[class*='Description']",
-                "[class*='details']",
-                "[class*='Details']",
-                # Data attribute patterns
-                "[data-testid='job-description']",
-                "[data-testid='jobDescription']",
-                "[data-test='job-description']",
-                # Semantic elements
                 "article",
                 "main",
-                "section",
             ]
         else:
             salary_selectors = [
@@ -710,28 +704,20 @@ class JobCollector:
         job_board = (self.current_board or "").lower()
         if job_board == "remotejobs":
             selectors = [
-                # Class-based patterns
+                # Indeed detail page selectors (remotejobs links to Indeed)
+                "#jobDescriptionText",
+                "[data-testid='jobDescriptionText']",
+                ".jobsearch-jobDescriptionText",
+                ".jobsearch-JobComponent-description",
+                "#jobDetailsSection",
+                "[data-testid='jobDetailsSection']",
+                # Generic fallbacks
                 "div.job-description",
                 ".job-description",
                 ".jobDescription",
-                "section.job-description",
-                "div.description",
-                # Partial class matching
                 "div[class*='job-description']",
                 "div[class*='jobDescription']",
                 "div[class*='JobDescription']",
-                "div[class*='description']",
-                "div[class*='Description']",
-                "[class*='content']",
-                "[class*='Content']",
-                # Data attribute patterns
-                "[data-testid='job-description']",
-                "[data-testid='jobDescription']",
-                "[data-testid='description']",
-                "[data-test='job-description']",
-                # Semantic elements
-                "article",
-                "main",
             ]
         else:
             selectors = [
