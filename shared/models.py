@@ -19,6 +19,12 @@ class Job(BaseModel):
     description_full: Optional[str] = None
     salary: Optional[str] = None
     job_type: Optional[str] = None
+
+    # Structured metadata (when available)
+    valid_through: Optional[str] = None
+    identifier: Optional[str] = None
+    applicant_location_requirements: Optional[List[str]] = None
+    job_location_type: Optional[str] = None
     
     # Metadata
     source: str = "target-site"  # Which job board

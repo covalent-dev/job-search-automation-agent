@@ -22,7 +22,8 @@ SESSION_FILE = Path("config/session.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_NAME = REPO_ROOT.name
 PROFILE_ROOT = Path.home() / ".job-search-automation"
-USER_DATA_DIR = PROFILE_ROOT / f"{REPO_NAME}-profile"
+# Match the profile naming used by setup_session.py
+USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
 REMOTEAFRICA_BASE_URL = "https://remote4africa.com/jobs"
 
 
@@ -99,8 +100,17 @@ class JobCollector:
         title = payload.get("title") or payload.get("name")
         org = payload.get("hiringOrganization") or {}
         company = org.get("name") if isinstance(org, dict) else None
-        date_posted = payload.get("datePosted")
-        description = payload.get("description")
+        date_posted = payload.get("datePosted") or None
+        valid_through = payload.get("validThrough") or None
+
+        identifier_value = None
+        identifier = payload.get("identifier")
+        if isinstance(identifier, dict):
+            identifier_value = identifier.get("value") or None
+
+        description_raw = payload.get("description") or ""
+        description_text = self._strip_html(description_raw)
+
         location = None
         job_location = payload.get("jobLocation")
         if isinstance(job_location, list) and job_location:
@@ -112,12 +122,72 @@ class JobCollector:
                 region = address.get("addressRegion")
                 country = address.get("addressCountry")
                 location = ", ".join([p for p in [locality, region, country] if p])
+
+        job_type = None
+        employment = payload.get("employmentType")
+        if employment:
+            if isinstance(employment, list):
+                normalized_types = []
+                for entry in employment:
+                    normalized = self._normalize_job_type_value(str(entry))
+                    if normalized and normalized not in normalized_types:
+                        normalized_types.append(normalized)
+                if normalized_types:
+                    job_type = ", ".join(normalized_types)
+            else:
+                job_type = self._normalize_job_type_value(str(employment))
+
+        salary = None
+        base_salary = payload.get("baseSalary")
+        if isinstance(base_salary, dict):
+            currency = base_salary.get("currency")
+            unit = None
+            min_value = None
+            max_value = None
+            value = base_salary.get("value")
+            if isinstance(value, dict):
+                unit = value.get("unitText")
+                min_value = value.get("minValue") or value.get("value") or base_salary.get("minValue")
+                max_value = value.get("maxValue") or base_salary.get("maxValue")
+            else:
+                min_value = base_salary.get("minValue") or value
+                max_value = base_salary.get("maxValue")
+                unit = base_salary.get("unitText")
+            salary = self._format_salary(currency, min_value, max_value, unit)
+
+        applicant_location_requirements = None
+        applicant_req = payload.get("applicantLocationRequirements")
+        if isinstance(applicant_req, dict):
+            name = applicant_req.get("name")
+            if isinstance(name, str) and name.strip():
+                applicant_location_requirements = [name.strip()]
+        elif isinstance(applicant_req, list):
+            names = []
+            for entry in applicant_req:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                if isinstance(name, str):
+                    name = name.strip()
+                    if name and name not in names:
+                        names.append(name)
+            if names:
+                applicant_location_requirements = names
+
+        job_location_type = payload.get("jobLocationType") or None
         return {
             "title": title,
             "company": company,
             "date_posted": date_posted,
-            "description": self._strip_html(description or ""),
+            "valid_through": valid_through,
+            "identifier": identifier_value,
+            "description": description_text,
+            "description_raw": description_raw,
             "location": location,
+            "salary": salary,
+            "job_type": job_type,
+            "applicant_location_requirements": applicant_location_requirements,
+            "job_location_type": job_location_type,
         }
 
     def _extract_job_from_detail(self, url: str) -> Optional[Job]:
@@ -147,29 +217,47 @@ class JobCollector:
                         if isinstance(item, dict):
                             parsed = self._parse_json_ld_job(item)
                             if parsed.get("title"):
-                                full_description = parsed.get("description") or ""
+                                description_text = parsed.get("description") or ""
+                                description_raw = parsed.get("description_raw") or ""
                                 return Job(
                                     title=parsed.get("title") or "Unknown Title",
                                     company=parsed.get("company") or "Unknown Company",
                                     location=parsed.get("location") or "Remote (Africa)",
                                     link=url,
-                                    description=full_description,
-                                    description_full=full_description if self.config.is_detail_description_enabled() else None,
+                                    description=description_text,
+                                    description_full=description_raw if self.config.is_detail_description_enabled() else None,
                                     date_posted=parsed.get("date_posted"),
+                                    valid_through=parsed.get("valid_through"),
+                                    salary=parsed.get("salary"),
+                                    job_type=parsed.get("job_type"),
+                                    identifier=parsed.get("identifier"),
+                                    applicant_location_requirements=parsed.get(
+                                        "applicant_location_requirements"
+                                    ),
+                                    job_location_type=parsed.get("job_location_type"),
                                     source="remoteafrica",
                                 )
                 elif isinstance(data, dict):
                     parsed = self._parse_json_ld_job(data)
                     if parsed.get("title"):
-                        full_description = parsed.get("description") or ""
+                        description_text = parsed.get("description") or ""
+                        description_raw = parsed.get("description_raw") or ""
                         return Job(
                             title=parsed.get("title") or "Unknown Title",
                             company=parsed.get("company") or "Unknown Company",
                             location=parsed.get("location") or "Remote (Africa)",
                             link=url,
-                            description=full_description,
-                            description_full=full_description if self.config.is_detail_description_enabled() else None,
+                            description=description_text,
+                            description_full=description_raw if self.config.is_detail_description_enabled() else None,
                             date_posted=parsed.get("date_posted"),
+                            valid_through=parsed.get("valid_through"),
+                            salary=parsed.get("salary"),
+                            job_type=parsed.get("job_type"),
+                            identifier=parsed.get("identifier"),
+                            applicant_location_requirements=parsed.get(
+                                "applicant_location_requirements"
+                            ),
+                            job_location_type=parsed.get("job_location_type"),
                             source="remoteafrica",
                         )
             except Exception:
@@ -370,7 +458,9 @@ class JobCollector:
         normalized = value.strip().replace("_", "-").lower()
         job_type_map = {
             "full-time": "Full-time",
+            "fulltime": "Full-time",
             "part-time": "Part-time",
+            "parttime": "Part-time",
             "contract": "Contract",
             "temporary": "Temporary",
             "intern": "Internship",
@@ -382,17 +472,35 @@ class JobCollector:
             return job_type_map[normalized]
         return normalized.replace("-", " ").title()
 
-    def _format_salary(self, currency: Optional[str], min_value: Optional[float],
-                       max_value: Optional[float], unit: Optional[str]) -> Optional[str]:
-        if min_value is None and max_value is None:
+    def _format_salary(
+        self,
+        currency: Optional[str],
+        min_value,
+        max_value,
+        unit: Optional[str],
+    ) -> Optional[str]:
+        def _coerce_number(value):
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                return float(value)
+            try:
+                return float(str(value).replace(",", "").strip())
+            except Exception:
+                return None
+
+        min_value_num = _coerce_number(min_value)
+        max_value_num = _coerce_number(max_value)
+
+        if min_value_num is None and max_value_num is None:
             return None
         currency_symbol = "$" if currency == "USD" else (currency or "")
-        if min_value is not None:
-            min_text = f"{currency_symbol}{int(min_value):,}"
+        if min_value_num is not None:
+            min_text = f"{currency_symbol}{int(min_value_num):,}"
         else:
             min_text = None
-        if max_value is not None:
-            max_text = f"{currency_symbol}{int(max_value):,}"
+        if max_value_num is not None:
+            max_text = f"{currency_symbol}{int(max_value_num):,}"
         else:
             max_text = None
         if min_text and max_text:
@@ -1239,13 +1347,16 @@ class JobCollector:
         finally:
             self.stop_browser()
 
-        # Remove duplicates based on link
+        # Remove duplicates based on link (and JSON-LD identifier when available)
         seen_links = set()
         unique_jobs = []
         for job in all_jobs:
-            if str(job.link) not in seen_links:
-                seen_links.add(str(job.link))
-                unique_jobs.append(job)
+            identifier = getattr(job, "identifier", None)
+            dedupe_key = identifier or str(job.link)
+            if dedupe_key in seen_links:
+                continue
+            seen_links.add(dedupe_key)
+            unique_jobs.append(job)
 
         print(f"\n📊 Total: {len(unique_jobs)} unique jobs collected")
         if self.first_captcha_fetch_count is not None:
