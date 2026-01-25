@@ -21,7 +21,7 @@ search:
   detail_salary_max_per_query: 0
   detail_salary_delay_min: 1.5
   detail_salary_delay_max: 2.5
-  detail_description_fetch: false
+  detail_description_fetch: true
   detail_description_timeout: 12
   detail_description_retries: 1
   detail_description_max_per_query: 0
