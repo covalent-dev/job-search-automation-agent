@@ -43,7 +43,7 @@ echo ""
 echo "✅ Test complete - check output/ for results"
 echo "📊 Analyze coverage:"
 echo ""
-python3 << 'PYEOF'
+python3 << PYEOF
 import json
 from pathlib import Path
 
