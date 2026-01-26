@@ -13,6 +13,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
 
@@ -1004,6 +1005,11 @@ class JobCollector:
             if href and not href.startswith("http"):
                 href = f"https://www.indeed.com{href}"
 
+            external_id = None
+            if href:
+                external_id = parse_qs(urlparse(href).query).get("jk", [None])[0]
+                external_id = external_id.strip() if external_id else None
+
             # Salary/job type (optional)
             salary = None
             job_type = None
@@ -1037,6 +1043,7 @@ class JobCollector:
                 job_type=job_type.strip() if job_type else None,
                 description=description.strip(),
                 date_posted=date_posted.strip() if date_posted else None,
+                external_id=external_id,
                 source="indeed"
             )
 
