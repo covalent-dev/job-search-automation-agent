@@ -215,6 +215,11 @@ class JobCollector:
 
         This extracts from the right-side pane that appears when clicking a job card,
         avoiding the need for separate page navigation.
+
+        Extraction priority:
+        1. JSON-LD structured data (most reliable)
+        2. Preference chips (salary, job_type)
+        3. Description text regex fallback (salary only)
         """
         result = {
             "salary": None,
@@ -224,37 +229,54 @@ class JobCollector:
         }
 
         try:
-            # Extract salary and job_type from preference chips
-            # Selectors: .job-details-fit-level-preferences, .job-details-preferences-and-skills
+            # 1. Try JSON-LD extraction first (most reliable)
+            json_salary, json_job_type = self._extract_salary_from_json_ld(self.page)
+            if json_salary:
+                result["salary"] = json_salary
+            if json_job_type:
+                result["job_type"] = json_job_type
+
+            # 2. Extract salary and job_type from preference chips
+            # Extended selectors for better coverage
             chip_selectors = [
                 ".job-details-fit-level-preferences li",
                 ".job-details-fit-level-preferences button",
+                ".job-details-fit-level-preferences span.tvm__text",
                 ".job-details-fit-level-preferences span",
                 ".job-details-preferences-and-skills li",
                 ".job-details-preferences-and-skills button",
+                ".job-details-preferences-and-skills span",
+                ".jobs-unified-top-card__job-insight li",
+                ".jobs-unified-top-card__job-insight span",
+                ".artdeco-entity-lockup__metadata div",
+                ".job-details-jobs-unified-top-card__job-insight",
+                ".job-details-jobs-unified-top-card__job-insight span",
             ]
             chips_text = []
+            seen_texts = set()
             for selector in chip_selectors:
                 for elem in self.page.query_selector_all(selector):
                     text = self._extract_text(elem)
-                    if text and len(text) < 100:  # Chips are short
+                    if text and len(text) < 150 and text not in seen_texts:
+                        seen_texts.add(text)
                         chips_text.append(text)
 
             for text in chips_text:
-                # Check for salary
+                # Check for salary (strip benefit suffix first)
                 if not result["salary"] and self._looks_like_salary(text):
-                    normalized = self._normalize_salary_text(text)
+                    cleaned = self._strip_benefit_suffix(text)
+                    normalized = self._normalize_salary_text(cleaned)
                     if normalized:
                         result["salary"] = normalized
                     else:
-                        result["salary"] = text
+                        result["salary"] = cleaned
                 # Check for job type
                 if not result["job_type"]:
                     _, job_type = self._classify_attribute_text(text)
                     if job_type:
                         result["job_type"] = job_type
 
-            # Extract description from detail pane
+            # 3. Extract description from detail pane
             desc_selectors = [
                 "div.jobs-box__html-content#job-details",
                 "div#job-details",
@@ -262,6 +284,7 @@ class JobCollector:
                 "div.jobs-description-content__text",
                 "section.jobs-description",
                 "article.jobs-description__container",
+                ".show-more-less-html__markup",
             ]
             for selector in desc_selectors:
                 elem = self.page.query_selector(selector)
@@ -271,12 +294,20 @@ class JobCollector:
                         result["description"] = text
                         break
 
-            # Extract posted date from top card
+            # 4. Regex fallback: try to extract salary from description if not found
+            if not result["salary"] and result["description"]:
+                desc_salary = self._extract_salary_from_description(result["description"])
+                if desc_salary:
+                    result["salary"] = desc_salary
+
+            # 5. Extract posted date from top card
             date_selectors = [
                 ".job-details-jobs-unified-top-card__tertiary-description-container",
                 ".job-details-jobs-unified-top-card__primary-description-container",
                 ".jobs-unified-top-card__subtitle-secondary-grouping",
                 "span.jobs-unified-top-card__posted-date",
+                ".artdeco-entity-lockup__caption",
+                "time",
             ]
             for selector in date_selectors:
                 elem = self.page.query_selector(selector)
@@ -415,6 +446,17 @@ class JobCollector:
 
         return salary, job_type
 
+    def _strip_benefit_suffix(self, salary_text: str) -> str:
+        """Strip benefit suffixes like '· Medical, +1 benefit' from salary text."""
+        if not salary_text:
+            return salary_text
+        # Pattern: salary · benefit text
+        # Examples: "$25/hr · Medical, +1 benefit", "$150K/yr - $190K/yr · Vision, +3 benefits"
+        match = re.match(r'^([^·]+)', salary_text)
+        if match:
+            return match.group(1).strip()
+        return salary_text.strip()
+
     def _normalize_salary_unit(self, unit: Optional[str]) -> Optional[str]:
         if not unit:
             return None
@@ -476,6 +518,68 @@ class JobCollector:
         if normalized in job_type_map:
             return job_type_map[normalized]
         return normalized.replace("-", " ").title()
+
+    def _extract_salary_from_description(self, description: str) -> Optional[str]:
+        """Extract salary from job description text using regex patterns."""
+        if not description:
+            return None
+
+        # Patterns to match salary mentions in description text
+        patterns = [
+            # Range patterns: $XX - $YY per hour/year, $XXk - $XXXk
+            r'\$\s?(\d[\d,]*(?:\.\d+)?)\s*[kK]?\s*[-–—to]+\s*\$?\s?(\d[\d,]*(?:\.\d+)?)\s*[kK]?\s*(?:per\s+)?(hour|hr|year|yr|annually)\b',
+            # Single value: $XX per hour/year, $XXk/yr
+            r'\$\s?(\d[\d,]*(?:\.\d+)?)\s*[kK]?\s*(?:per\s+|/)?(hour|hr|year|yr|annually)\b',
+            # Range with k suffix: $120k - $150k
+            r'\$\s?(\d+)\s*[kK]\s*[-–—to]+\s*\$?\s?(\d+)\s*[kK]\b',
+            # Hourly range without unit: $25 - $35/hr
+            r'\$\s?(\d+(?:\.\d+)?)\s*[-–—to]+\s*\$?\s?(\d+(?:\.\d+)?)\s*/\s*(hr|hour)\b',
+            # Salary: $XXX,XXX patterns
+            r'salary[:\s]+\$?\s?(\d[\d,]+)\s*(?:[-–—to]+\s*\$?\s?(\d[\d,]+))?\s*(?:per\s+)?(year|annually)?',
+            # Compensation: $XX/hr or $XXk
+            r'compensation[:\s]+\$?\s?(\d[\d,]*(?:\.\d+)?)\s*[kK]?\s*(?:per\s+|/)?(hour|hr|year|yr)?',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, description, re.IGNORECASE)
+            if match:
+                groups = match.groups()
+                # Try to normalize the found salary
+                extracted = match.group(0)
+                normalized = self._normalize_salary_text(extracted)
+                if normalized:
+                    return normalized
+                # If normalization failed, try to build from captured groups
+                if len(groups) >= 2 and groups[0]:
+                    try:
+                        min_val = groups[0].replace(',', '')
+                        max_val = groups[1].replace(',', '') if groups[1] else None
+                        unit = groups[2] if len(groups) > 2 else None
+
+                        # Handle k suffix
+                        if 'k' in extracted.lower():
+                            min_val = str(float(min_val) * 1000)
+                            if max_val:
+                                max_val = str(float(max_val) * 1000)
+
+                        min_float = float(min_val)
+                        max_float = float(max_val) if max_val else None
+
+                        # Determine unit
+                        unit_norm = None
+                        if unit:
+                            if unit.lower() in ('hr', 'hour'):
+                                unit_norm = 'hour'
+                            elif unit.lower() in ('yr', 'year', 'annually'):
+                                unit_norm = 'year'
+                        elif min_float > 500:  # Likely annual if > 500
+                            unit_norm = 'year'
+
+                        return self._format_salary('$', min_float, max_float, unit_norm)
+                    except (ValueError, TypeError):
+                        pass
+
+        return None
 
     def _format_salary(self, currency: Optional[str], min_value: Optional[float],
                        max_value: Optional[float], unit: Optional[str]) -> Optional[str]:
@@ -1271,21 +1375,34 @@ class JobCollector:
             )
             company = self._extract_text(company_elem) if company_elem else "Unknown Company"
 
-            # Location
+            # Location and Salary from card metadata
             location = None
             salary = None
-            metadata_items = card.query_selector_all("ul.job-card-container__metadata-wrapper li span")
-            for item in metadata_items:
-                text = self._extract_text(item)
-                if not text:
-                    continue
-                if self._looks_like_salary(text) and not salary:
-                    salary = text
-                    continue
-                if not location:
-                    location = text
+            # Extended selectors to catch salary from various card layouts
+            metadata_selectors = [
+                "ul.job-card-container__metadata-wrapper li span",
+                ".artdeco-entity-lockup__metadata div",
+                ".job-card-container__metadata-item",
+                ".job-card-list__insight span",
+            ]
+            for selector in metadata_selectors:
+                for item in card.query_selector_all(selector):
+                    text = self._extract_text(item)
+                    if not text:
+                        continue
+                    if self._looks_like_salary(text) and not salary:
+                        # Strip benefit suffix and normalize
+                        cleaned = self._strip_benefit_suffix(text)
+                        normalized = self._normalize_salary_text(cleaned)
+                        salary = normalized if normalized else cleaned
+                        continue
+                    if not location and not self._looks_like_salary(text):
+                        # Avoid setting location to salary text
+                        location = text
             if not location:
                 location_elem = card.query_selector("span.job-search-card__location")
+                if not location_elem:
+                    location_elem = card.query_selector(".artdeco-entity-lockup__caption div")
                 location = self._extract_text(location_elem) if location_elem else "Unknown Location"
 
             # Link
