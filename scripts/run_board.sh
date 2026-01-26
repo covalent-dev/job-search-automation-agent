@@ -32,4 +32,13 @@ echo "📁 Working dir: $(pwd)"
 echo "🐍 Python path: $PYTHONPATH"
 echo ""
 
-python3 "$REPO_ROOT/shared/main.py" --config "$CONFIG"
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ]; then
+    if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+        PYTHON_BIN="$REPO_ROOT/.venv/bin/python"
+    else
+        PYTHON_BIN="python3"
+    fi
+fi
+
+"$PYTHON_BIN" "$REPO_ROOT/shared/main.py" --config "$CONFIG"
