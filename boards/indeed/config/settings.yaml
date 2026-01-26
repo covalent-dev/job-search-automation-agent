@@ -37,16 +37,16 @@ output:
     enabled: true
     vault_path: /Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/indeed
 browser:
-  headless: false
-  min_delay: 0.5
-  max_delay: 2.0
+  headless: true
+  min_delay: 1.0
+  max_delay: 3.0
   page_timeout: 30
   navigation_timeout: 45
   launch_timeout: 60
   max_retries: 2
   channel: ''
   executable_path: ''
-  use_stealth: false
+  use_stealth: true
 ai_filter:
   enabled: true
   model: deepseek-coder-v2:latest
