@@ -13,8 +13,8 @@ search:
   - generative AI engineer
   - AI automation engineer
   location: Remote
-  max_results_per_search: 50
-  max_pages: 2
+  max_results_per_search: 5
+  max_pages: 1
   detail_salary_fetch: true
   detail_salary_timeout: 9
   detail_salary_retries: 1
@@ -34,21 +34,21 @@ output:
   markdown_file: output/jobs_{timestamp}.md
   summary_file: output/run_summary_{timestamp}.json
   config_snapshot_file: output/config_snapshot_{timestamp}.yaml
-  use_timestamp: true
+  use_timestamp: false
   vault_sync:
     enabled: true
     vault_path: /Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/glassdoor
 browser:
-  headless: false
-  min_delay: 0.5
-  max_delay: 2.0
+  headless: true
+  min_delay: 1.0
+  max_delay: 3.0
   page_timeout: 30
   navigation_timeout: 45
   launch_timeout: 60
   max_retries: 2
   channel: ''
   executable_path: ''
-  use_stealth: false
+  use_stealth: true
 ai_filter:
   enabled: true
   model: deepseek-coder-v2:latest
