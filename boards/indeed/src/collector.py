@@ -72,6 +72,40 @@ class JobCollector:
         delay = random.uniform(min_delay, max_delay)
         time.sleep(delay)
 
+    def _simulate_human_behavior(self) -> None:
+        """Simulate human-like behavior to avoid bot detection"""
+        try:
+            # Initial delay to let page settle
+            time.sleep(random.uniform(2.0, 4.0))
+
+            # Random mouse movements
+            for _ in range(random.randint(2, 4)):
+                x = random.randint(100, 800)
+                y = random.randint(100, 600)
+                self.page.mouse.move(x, y)
+                time.sleep(random.uniform(0.1, 0.3))
+
+            # Random scroll
+            scroll_amount = random.randint(100, 400)
+            self.page.evaluate(f'window.scrollBy(0, {scroll_amount})')
+            time.sleep(random.uniform(0.3, 0.7))
+
+            # Scroll back up a bit
+            scroll_up = random.randint(50, 150)
+            self.page.evaluate(f'window.scrollBy(0, -{scroll_up})')
+            time.sleep(random.uniform(0.2, 0.5))
+
+            # More mouse movements
+            for _ in range(random.randint(1, 3)):
+                x = random.randint(200, 1000)
+                y = random.randint(150, 500)
+                self.page.mouse.move(x, y)
+                time.sleep(random.uniform(0.1, 0.2))
+
+            logger.debug("Human behavior simulation completed")
+        except Exception as exc:
+            logger.debug("Human behavior simulation failed: %s", exc)
+
     def _build_search_url(self, query: SearchQuery, start: int = 0) -> str:
         """Build search URL for job board"""
         # Indeed URL structure
@@ -709,20 +743,55 @@ class JobCollector:
             logger.warning("Browser executable not found: %s", executable_path)
             executable_path = None
 
+        # Comprehensive stealth args for headless mode
+        stealth_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=IsolateOrigins,site-per-process",
+            "--disable-site-isolation-trials",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--disable-gpu",
+            "--window-size=1920,1080",
+            "--start-maximized",
+            "--disable-infobars",
+            "--disable-extensions",
+            "--disable-plugins-discovery",
+            "--disable-background-networking",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-breakpad",
+            "--disable-component-extensions-with-background-pages",
+            "--disable-default-apps",
+            "--disable-features=TranslateUI",
+            "--disable-hang-monitor",
+            "--disable-ipc-flooding-protection",
+            "--disable-popup-blocking",
+            "--disable-prompt-on-repost",
+            "--disable-renderer-backgrounding",
+            "--disable-sync",
+            "--force-color-profile=srgb",
+            "--metrics-recording-only",
+            "--no-first-run",
+            "--password-store=basic",
+            "--use-mock-keychain",
+        ]
+
         # Check if persistent profile exists (preferred method)
         if self.user_data_dir.exists():
             logger.info(f"Using persistent profile: {self.user_data_dir}")
             self.context = self.playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.user_data_dir),
                 headless=self.config.is_headless(),
-                viewport={"width": 1280, "height": 800},
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                ],
+                viewport={"width": 1920, "height": 1080},
+                args=stealth_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                locale="en-US",
+                timezone_id="America/New_York",
             )
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
@@ -730,6 +799,7 @@ class JobCollector:
             logger.info("No persistent profile found, using regular context")
             self.browser = self.playwright.chromium.launch(
                 headless=self.config.is_headless(),
+                args=stealth_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
@@ -739,12 +809,18 @@ class JobCollector:
                 logger.info(f"Loading session from {self.session_file}")
                 self.context = self.browser.new_context(
                     storage_state=str(self.session_file),
-                    viewport={"width": 1280, "height": 800},
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    locale="en-US",
+                    timezone_id="America/New_York",
                 )
             else:
                 logger.warning("No session found - run setup_session.py first!")
                 self.context = self.browser.new_context(
-                    viewport={"width": 1280, "height": 800},
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    locale="en-US",
+                    timezone_id="America/New_York",
                 )
 
             self.page = self.context.new_page()
@@ -759,6 +835,58 @@ class JobCollector:
                 logger.info("Playwright stealth enabled")
             except Exception as exc:
                 logger.warning("Failed to enable stealth mode: %s", exc)
+
+        # Add Indeed-specific init scripts to bypass detection
+        try:
+            self.page.add_init_script("""
+                // Remove webdriver property
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
+
+                // Add chrome.runtime
+                if (!window.chrome) {
+                    window.chrome = {};
+                }
+                window.chrome.runtime = {};
+
+                // Fix navigator.plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => {
+                        const plugins = [
+                            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                            { name: 'Native Client', filename: 'internal-nacl-plugin' }
+                        ];
+                        plugins.length = 3;
+                        return plugins;
+                    },
+                    configurable: true
+                });
+
+                // Fix navigator.languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                    configurable: true
+                });
+
+                // Indeed-specific: remove Chromium driver markers
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+
+                // Fix permissions API
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+            """)
+            logger.info("Init scripts added for bot detection bypass")
+        except Exception as exc:
+            logger.warning("Failed to add init scripts: %s", exc)
 
         logger.info("Browser started successfully")
 
@@ -830,6 +958,9 @@ class JobCollector:
                     logger.warning("Failed to load search page after retries")
                     print("   ✗ Failed to load search page")
                     break
+
+                # Simulate human behavior before interacting with page
+                self._simulate_human_behavior()
                 self._random_delay()
 
                 # Try multiple selectors (Indeed changes these frequently)
