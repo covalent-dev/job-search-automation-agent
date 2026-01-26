@@ -45,6 +45,7 @@ class JobCollector:
         self.max_retries = self.config.get_max_retries()
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
         self.detail_description_cache: dict[str, Optional[str]] = {}
+        self.detail_company_cache: dict[str, Optional[str]] = {}
         self.skip_detail_fetches = False
         self.detail_debug_saved = False
         self.detail_description_debug_saved = False
@@ -403,6 +404,167 @@ class JobCollector:
             salary = f"{salary} {article} {unit_norm}"
         return salary
 
+    def _clean_company_name(self, name: Optional[str]) -> Optional[str]:
+        if not name:
+            return None
+        cleaned = re.sub(r"\s+", " ", name).strip()
+        if len(cleaned) < 2 or len(cleaned) > 100:
+            return None
+        lower = cleaned.lower()
+        if lower in {"remotejobs", "remote jobs", "remotejobs.io"}:
+            return None
+        if "remotejobs.io" in lower or "remote jobs" == lower:
+            return None
+        if "http://" in lower or "https://" in lower:
+            return None
+        if re.search(r"\bemployee", lower):
+            return None
+        if not re.search(r"[a-zA-Z]", cleaned):
+            return None
+        return cleaned
+
+    def _extract_company_name_from_value(self, value) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return self._clean_company_name(value)
+        if isinstance(value, dict):
+            for key in ("name", "legalName", "companyName", "company_name"):
+                candidate = value.get(key)
+                if isinstance(candidate, str):
+                    cleaned = self._clean_company_name(candidate)
+                    if cleaned:
+                        return cleaned
+            return None
+        if isinstance(value, list):
+            for entry in value:
+                found = self._extract_company_name_from_value(entry)
+                if found:
+                    return found
+        return None
+
+    def _find_company_name_in_data(self, data, max_depth: int = 6) -> Optional[str]:
+        if max_depth <= 0 or data is None:
+            return None
+        if isinstance(data, dict):
+            for key in ("companyName", "company_name", "company", "employer", "organization", "hiringOrganization"):
+                if key in data:
+                    found = self._extract_company_name_from_value(data.get(key))
+                    if found:
+                        return found
+            for value in data.values():
+                found = self._find_company_name_in_data(value, max_depth - 1)
+                if found:
+                    return found
+        elif isinstance(data, list):
+            for entry in data:
+                found = self._find_company_name_in_data(entry, max_depth - 1)
+                if found:
+                    return found
+        return None
+
+    def _extract_company_from_json_ld(self, page: Page) -> Optional[str]:
+        for script in page.query_selector_all("script[type='application/ld+json']"):
+            raw = self._extract_text(script)
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                graph = item.get("@graph")
+                if isinstance(graph, list):
+                    items.extend([entry for entry in graph if isinstance(entry, dict)])
+                found = self._find_company_name_in_data(item)
+                if found:
+                    return found
+        return None
+
+    def _extract_company_from_next_data(self, page: Page) -> Optional[str]:
+        script = page.query_selector("script#__NEXT_DATA__")
+        raw = self._extract_text(script)
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return None
+        return self._find_company_name_in_data(data, max_depth=7)
+
+    def _extract_company_from_dom(self, page: Page) -> Optional[str]:
+        root = page.query_selector("main") or page.query_selector("article") or page
+        selectors = [
+            "[data-testid='company-name']",
+            "[data-testid='companyName']",
+            "[data-testid='company']",
+            "[data-test='company-name']",
+            ".company-name",
+            ".companyName",
+            ".company",
+            "[class*='company']",
+            "a[href*='/company/']",
+            "a[href*='/companies/']",
+            "a[href*='/employer/']",
+            "a[href*='/employers/']",
+        ]
+        text = self._first_text(root, selectors)
+        cleaned = self._clean_company_name(text)
+        if cleaned:
+            return cleaned
+        meta_selectors = [
+            "meta[name='author']",
+            "meta[property='article:author']",
+            "meta[name='company']",
+        ]
+        for selector in meta_selectors:
+            meta = page.query_selector(selector)
+            content = meta.get_attribute("content") if meta else ""
+            cleaned = self._clean_company_name(content)
+            if cleaned:
+                return cleaned
+        return None
+
+    def _extract_company_from_title(self, page: Page) -> Optional[str]:
+        try:
+            title = (page.title() or "").strip()
+        except Exception:
+            return None
+        if not title:
+            return None
+        match = re.search(r"\bat\s+([^|\-–—]+)", title, flags=re.IGNORECASE)
+        if match:
+            candidate = match.group(1).strip()
+            cleaned = self._clean_company_name(candidate)
+            if cleaned:
+                return cleaned
+        if "|" in title:
+            parts = [part.strip() for part in title.split("|") if part.strip()]
+            if len(parts) >= 2:
+                candidate = parts[-2]
+                cleaned = self._clean_company_name(candidate)
+                if cleaned:
+                    return cleaned
+        return None
+
+    def _extract_company_from_detail_page(self, page: Page) -> Optional[str]:
+        for extractor in (
+            self._extract_company_from_next_data,
+            self._extract_company_from_json_ld,
+            self._extract_company_from_dom,
+            self._extract_company_from_title,
+        ):
+            try:
+                company = extractor(page)
+            except Exception:
+                company = None
+            if company:
+                return company
+        return None
+
     def _extract_salary_from_json_ld(self, page: Page) -> tuple[Optional[str], Optional[str]]:
         salary = None
         job_type = None
@@ -639,6 +801,11 @@ class JobCollector:
                     if json_job_type and not job_type:
                         job_type = json_job_type
 
+                if job_board == "remotejobs" and url not in self.detail_company_cache:
+                    detail_company = self._extract_company_from_detail_page(detail_page)
+                    if detail_company:
+                        self.detail_company_cache[url] = detail_company
+
                 text_chunks = []
                 for selector in salary_selectors:
                     for element in detail_page.query_selector_all(selector):
@@ -685,6 +852,79 @@ class JobCollector:
 
         self.detail_salary_cache[url] = (salary, job_type)
         return salary, job_type
+
+    def _fetch_detail_company(self, url: str) -> Optional[str]:
+        if not self.context or not url:
+            return None
+        if self.skip_detail_fetches:
+            return None
+        cached = self.detail_company_cache.get(url)
+        if cached:
+            return cached
+
+        timeout_ms = self.config.get_detail_salary_timeout() * 1000
+        retries = self.config.get_detail_salary_retries()
+        delay_min = self.config.get_detail_salary_delay_min()
+        delay_max = self.config.get_detail_salary_delay_max()
+
+        attempt = 0
+        job_board = (self.current_board or "").lower()
+        if job_board != "remotejobs":
+            return None
+
+        while attempt < retries:
+            try:
+                attempt += 1
+                if self.detail_salary_page is not None and self.detail_salary_page.is_closed():
+                    self.detail_salary_page = None
+                if self.detail_salary_page is None:
+                    self.detail_salary_page = self.context.new_page()
+                    self.detail_salary_page.set_default_timeout(timeout_ms)
+                    self.detail_salary_page.set_default_navigation_timeout(timeout_ms)
+                detail_page = self.detail_salary_page
+                if delay_max > 0:
+                    time.sleep(random.uniform(delay_min, delay_max))
+                detail_page.goto(url, wait_until="domcontentloaded")
+                try:
+                    detail_page.wait_for_selector("main, article, h1", timeout=3000)
+                except Exception:
+                    pass
+                captcha_detection = self._is_captcha_page(detail_page)
+                if captcha_detection:
+                    self.captcha_consecutive += 1
+                    logger.warning(
+                        "Detail company fetch blocked by captcha (reason=%s, title=%s, url=%s)",
+                        captcha_detection["reason"],
+                        captcha_detection["title"],
+                        captcha_detection["url"],
+                    )
+                    self._captcha_backoff()
+                    action = self._handle_captcha_prompt(url)
+                    if action == "abort":
+                        raise CaptchaAbort("User requested abort after captcha")
+                    if action == "skip":
+                        return None
+                    if action == "retry":
+                        self.detail_salary_page = None
+                        attempt = max(attempt - 1, 0)
+                        continue
+                else:
+                    self.captcha_consecutive = 0
+
+                detail_company = self._extract_company_from_detail_page(detail_page)
+                if detail_company:
+                    self.detail_company_cache[url] = detail_company
+                    return detail_company
+
+            except Exception as exc:
+                if isinstance(exc, CaptchaAbort):
+                    raise
+                if "Target page, context or browser has been closed" in str(exc):
+                    self.detail_salary_page = None
+                logger.warning("Detail company fetch failed (attempt %s/%s): %s", attempt, retries, exc)
+                self._random_delay()
+
+        return None
 
     def _fetch_detail_description(self, url: str) -> Optional[str]:
         if not self.context or not url:
@@ -772,6 +1012,11 @@ class JobCollector:
                     text = self._extract_text(elem)
                     if text and (not description or len(text) > len(description)):
                         description = text
+
+                if job_board == "remotejobs" and url not in self.detail_company_cache:
+                    detail_company = self._extract_company_from_detail_page(detail_page)
+                    if detail_company:
+                        self.detail_company_cache[url] = detail_company
 
                 if not description and not self.detail_description_debug_saved:
                     try:
@@ -1121,12 +1366,12 @@ class JobCollector:
                         job = self._extract_job_from_card(card)
                         if job and str(job.link) not in seen_links:
                             if (
-                                self.config.is_detail_salary_enabled()
-                                and not job.salary
-                                and job.link
-                                and not self.skip_detail_fetches
-                                and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
-                            ):
+                        self.config.is_detail_salary_enabled()
+                        and not job.salary
+                        and job.link
+                        and not self.skip_detail_fetches
+                        and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
+                    ):
                                 if unlimited_detail_fetches:
                                     fetch_label = f"{detail_fetches + 1}/∞"
                                 else:
@@ -1167,6 +1412,37 @@ class JobCollector:
                                 if detail_description:
                                     job.description_full = detail_description
                                 detail_description_fetches += 1
+
+                            if (
+                                self.current_board == "remotejobs"
+                                and job.link
+                                and job.company == "Unknown Company"
+                                and not self.skip_detail_fetches
+                                and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
+                            ):
+                                detail_company = self.detail_company_cache.get(str(job.link))
+                                if not detail_company:
+                                    if unlimited_detail_fetches:
+                                        fetch_label = f"{detail_fetches + 1}/∞"
+                                    else:
+                                        fetch_label = f"{detail_fetches + 1}/{max_detail_fetches}"
+                                    self.detail_fetch_count_total += 1
+                                    print(f"\r   Detail company: {fetch_label}", end="", flush=True)
+                                    logger.info(
+                                        "Detail company fetch %s: %s",
+                                        fetch_label,
+                                        job.link,
+                                    )
+                                    detail_company = self._fetch_detail_company(str(job.link))
+                                    print("")
+                                    detail_fetches += 1
+                                if detail_company:
+                                    job.company = detail_company
+
+                            if self.current_board == "remotejobs" and job.company == "Unknown Company":
+                                cached_company = self.detail_company_cache.get(str(job.link))
+                                if cached_company:
+                                    job.company = cached_company
 
                             seen_links.add(str(job.link))
                             jobs.append(job)
