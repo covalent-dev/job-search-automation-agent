@@ -31,6 +31,130 @@ class CaptchaAbort(Exception):
     """Raised when user opts to abort after captcha."""
 
 
+STEALTH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--disable-features=IsolateOrigins,site-per-process",
+    "--disable-site-isolation-trials",
+    "--disable-web-security",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-accelerated-2d-canvas",
+    "--disable-gpu",
+    "--window-size=1920,1080",
+    "--start-maximized",
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--disable-infobars",
+    "--disable-notifications",
+    "--disable-popup-blocking",
+    "--ignore-certificate-errors",
+    "--allow-running-insecure-content",
+]
+
+STEALTH_INIT_SCRIPT = """
+// Overwrite navigator.webdriver
+Object.defineProperty(navigator, 'webdriver', {
+    get: () => undefined,
+});
+
+// Add chrome runtime object
+window.chrome = {
+    runtime: {},
+    loadTimes: function() {},
+    csi: function() {},
+    app: {},
+};
+
+// Fix plugins to look realistic
+Object.defineProperty(navigator, 'plugins', {
+    get: () => {
+        const plugins = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+        ];
+        plugins.item = (i) => plugins[i] || null;
+        plugins.namedItem = (name) => plugins.find(p => p.name === name) || null;
+        plugins.refresh = () => {};
+        return plugins;
+    },
+});
+
+// Fix languages
+Object.defineProperty(navigator, 'languages', {
+    get: () => ['en-US', 'en'],
+});
+
+// Fix platform
+Object.defineProperty(navigator, 'platform', {
+    get: () => 'Win32',
+});
+
+// Fix hardware concurrency
+Object.defineProperty(navigator, 'hardwareConcurrency', {
+    get: () => 8,
+});
+
+// Fix device memory
+Object.defineProperty(navigator, 'deviceMemory', {
+    get: () => 8,
+});
+
+// Override permissions query
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications' ?
+        Promise.resolve({ state: Notification.permission }) :
+        originalQuery(parameters)
+);
+
+// Fix WebGL vendor/renderer
+const getParameterProxyHandler = {
+    apply: function(target, thisArg, args) {
+        const param = args[0];
+        const gl = thisArg;
+        if (param === 37445) {
+            return 'Intel Inc.';
+        }
+        if (param === 37446) {
+            return 'Intel Iris OpenGL Engine';
+        }
+        return Reflect.apply(target, thisArg, args);
+    }
+};
+
+try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (gl) {
+        gl.getParameter = new Proxy(gl.getParameter, getParameterProxyHandler);
+    }
+    const gl2 = canvas.getContext('webgl2');
+    if (gl2) {
+        gl2.getParameter = new Proxy(gl2.getParameter, getParameterProxyHandler);
+    }
+} catch (e) {}
+
+// Prevent detection via iframe contentWindow
+try {
+    const iframeDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+        get: function() {
+            const iframe = iframeDescriptor.get.call(this);
+            if (!iframe) return iframe;
+            try {
+                if (iframe.navigator && iframe.navigator.webdriver !== undefined) {
+                    Object.defineProperty(iframe.navigator, 'webdriver', { get: () => undefined });
+                }
+            } catch (e) {}
+            return iframe;
+        }
+    });
+} catch (e) {}
+"""
+
+
 class JobCollector:
     """Collects job listings using Playwright browser automation"""
 
@@ -625,7 +749,7 @@ class JobCollector:
                 if self.detail_salary_page is not None and self.detail_salary_page.is_closed():
                     self.detail_salary_page = None
                 if self.detail_salary_page is None:
-                    self.detail_salary_page = self.context.new_page()
+                    self.detail_salary_page = self._create_stealth_page()
                     self.detail_salary_page.set_default_timeout(timeout_ms)
                     self.detail_salary_page.set_default_navigation_timeout(timeout_ms)
                 detail_page = self.detail_salary_page
@@ -778,7 +902,7 @@ class JobCollector:
                 if self.detail_description_page is not None and self.detail_description_page.is_closed():
                     self.detail_description_page = None
                 if self.detail_description_page is None:
-                    self.detail_description_page = self.context.new_page()
+                    self.detail_description_page = self._create_stealth_page()
                     self.detail_description_page.set_default_timeout(timeout_ms)
                     self.detail_description_page.set_default_navigation_timeout(timeout_ms)
                 detail_page = self.detail_description_page
@@ -849,10 +973,18 @@ class JobCollector:
 
 
     def _safe_goto(self, url: str) -> bool:
-        """Navigate with retry for flaky pages."""
+        """Navigate with retry for flaky pages, with human-like behavior."""
         for attempt in range(1, self.max_retries + 1):
             try:
                 self.page.goto(url, wait_until="domcontentloaded")
+                if self.config.use_stealth():
+                    time.sleep(random.uniform(1.0, 2.0))
+                    try:
+                        self.page.mouse.move(random.randint(100, 400), random.randint(100, 300))
+                        time.sleep(random.uniform(0.2, 0.5))
+                        self.page.evaluate("window.scrollBy(0, %d)" % random.randint(30, 100))
+                    except Exception:
+                        pass
                 return True
             except Exception as exc:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
@@ -885,39 +1017,87 @@ class JobCollector:
             return True
         return False
 
+    def _apply_stealth_to_page(self, page: Page) -> None:
+        """Apply comprehensive stealth measures to a page."""
+        if not self.config.use_stealth():
+            return
+
+        try:
+            page.add_init_script(STEALTH_INIT_SCRIPT)
+            logger.debug("Stealth init script added to page")
+        except Exception as exc:
+            logger.warning("Failed to add stealth init script: %s", exc)
+
+        try:
+            from playwright_stealth.stealth import Stealth
+            Stealth().apply_stealth_sync(page)
+            logger.debug("Playwright-stealth applied to page")
+        except Exception as exc:
+            logger.warning("Failed to apply playwright-stealth: %s", exc)
+
+    def _human_like_warmup(self, page: Page) -> None:
+        """Perform human-like warmup actions on a page."""
+        try:
+            time.sleep(random.uniform(2, 4))
+            page.mouse.move(random.randint(100, 500), random.randint(100, 300))
+            time.sleep(random.uniform(0.3, 0.8))
+            page.mouse.move(random.randint(200, 600), random.randint(200, 400))
+            time.sleep(random.uniform(0.2, 0.5))
+            page.evaluate("window.scrollBy(0, %d)" % random.randint(50, 150))
+            time.sleep(random.uniform(0.5, 1.0))
+        except Exception as exc:
+            logger.debug("Human-like warmup failed (non-critical): %s", exc)
+
+    def _create_stealth_page(self) -> Page:
+        """Create a new page with stealth measures applied."""
+        page = self.context.new_page()
+        page.set_default_timeout(self.config.get_page_timeout())
+        page.set_default_navigation_timeout(self.config.get_navigation_timeout())
+        self._apply_stealth_to_page(page)
+        return page
+
     def start_browser(self) -> None:
-        """Initialize Playwright browser with persistent profile"""
-        logger.info("Starting browser...")
+        """Initialize Playwright browser with persistent profile and stealth"""
+        logger.info("Starting browser with stealth mode...")
         self.playwright = sync_playwright().start()
         channel = self.config.get_browser_channel() or None
         executable_path = self.config.get_browser_executable_path() or None
         launch_timeout = self.config.get_launch_timeout()
+        use_stealth = self.config.use_stealth()
 
         if executable_path and not Path(executable_path).exists():
             logger.warning("Browser executable not found: %s", executable_path)
             executable_path = None
 
-        # Check if persistent profile exists (preferred method)
+        browser_args = STEALTH_ARGS if use_stealth else [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+        ]
+
+        context_options = {
+            "viewport": {"width": 1920, "height": 1080},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+        }
+
         if self.user_data_dir.exists():
             logger.info(f"Using persistent profile: {self.user_data_dir}")
             self.context = self.playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.user_data_dir),
                 headless=self.config.is_headless(),
-                viewport={"width": 1280, "height": 800},
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                ],
+                args=browser_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
+                **context_options,
             )
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
-            # Fallback to session file or new context
             logger.info("No persistent profile found, using regular context")
             self.browser = self.playwright.chromium.launch(
                 headless=self.config.is_headless(),
+                args=browser_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
@@ -927,28 +1107,30 @@ class JobCollector:
                 logger.info(f"Loading session from {self.session_file}")
                 self.context = self.browser.new_context(
                     storage_state=str(self.session_file),
-                    viewport={"width": 1280, "height": 800},
+                    **context_options,
                 )
             else:
                 logger.warning("No session found - run setup_session.py first!")
-                self.context = self.browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                )
+                self.context = self.browser.new_context(**context_options)
 
             self.page = self.context.new_page()
 
         self.page.set_default_timeout(self.config.get_page_timeout())
         self.page.set_default_navigation_timeout(self.config.get_navigation_timeout())
 
-        if self.config.use_stealth():
-            try:
-                from playwright_stealth.stealth import Stealth
-                Stealth().apply_stealth_sync(self.page)
-                logger.info("Playwright stealth enabled")
-            except Exception as exc:
-                logger.warning("Failed to enable stealth mode: %s", exc)
+        self._apply_stealth_to_page(self.page)
 
-        logger.info("Browser started successfully")
+        if use_stealth:
+            logger.info("Performing homepage warmup for Glassdoor...")
+            try:
+                self.page.goto("https://www.glassdoor.com", wait_until="domcontentloaded")
+                self._human_like_warmup(self.page)
+                logger.info("Homepage warmup complete")
+            except Exception as exc:
+                logger.warning("Homepage warmup failed (continuing anyway): %s", exc)
+
+        logger.info("Browser started successfully with stealth=%s, headless=%s",
+                    use_stealth, self.config.is_headless())
 
     def stop_browser(self) -> None:
         """Clean up browser resources"""
