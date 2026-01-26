@@ -86,12 +86,16 @@ class DedupeStore:
 
     def _stable_key(self, job: Job) -> str:
         """Build a stable key that survives tracking URL changes."""
-        if job.link and job.source == "indeed":
-            parsed = urlparse(str(job.link))
-            query = parse_qs(parsed.query)
-            jk = query.get("jk", [None])[0]
-            if jk:
-                return f"indeed|{jk.strip()}"
+        if job.source == "indeed":
+            if getattr(job, "external_id", None):
+                return f"indeed|{job.external_id.strip()}"
+
+            if job.link:
+                parsed = urlparse(str(job.link))
+                query = parse_qs(parsed.query)
+                jk = query.get("jk", [None])[0]
+                if jk:
+                    return f"indeed|{jk.strip()}"
 
         title = (job.title or "").strip().lower()
         company = (job.company or "").strip().lower()
