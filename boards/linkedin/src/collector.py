@@ -161,6 +161,17 @@ class JobCollector:
             return title
         cleaned = title.replace(" with verification", "")
         cleaned = cleaned.replace(" With Verification", "")
+        # Strip LinkedIn "| $XX/hr - $YY/hr - Remote" suffixes
+        pipe_match = re.search(r'\s*\|\s*\$[\d,./\-\s]+(?:hr|yr|hour|year)?(?:\s*-\s*(?:Remote|Hybrid|On-site))?.*$', cleaned, re.IGNORECASE)
+        if pipe_match:
+            cleaned = cleaned[:pipe_match.start()].strip()
+        # Simple exact duplicate detection (e.g., "Title Title" -> "Title")
+        tokens = cleaned.split()
+        if len(tokens) >= 2 and len(tokens) % 2 == 0:
+            half = len(tokens) // 2
+            if tokens[:half] == tokens[half:]:
+                cleaned = " ".join(tokens[:half])
+        # More flexible duplicate detection
         tokens = cleaned.split()
         for n in range(len(tokens) // 2, 4, -1):
             segment = " ".join(tokens[:n])
@@ -198,6 +209,94 @@ class JobCollector:
             "minutes",
         ]
         return any(marker in lowered for marker in time_markers)
+
+    def _extract_from_detail_pane(self) -> dict:
+        """Extract salary, job_type, description, and date_posted from LinkedIn's detail pane.
+
+        This extracts from the right-side pane that appears when clicking a job card,
+        avoiding the need for separate page navigation.
+        """
+        result = {
+            "salary": None,
+            "job_type": None,
+            "description": None,
+            "date_posted": None,
+        }
+
+        try:
+            # Extract salary and job_type from preference chips
+            # Selectors: .job-details-fit-level-preferences, .job-details-preferences-and-skills
+            chip_selectors = [
+                ".job-details-fit-level-preferences li",
+                ".job-details-fit-level-preferences button",
+                ".job-details-fit-level-preferences span",
+                ".job-details-preferences-and-skills li",
+                ".job-details-preferences-and-skills button",
+            ]
+            chips_text = []
+            for selector in chip_selectors:
+                for elem in self.page.query_selector_all(selector):
+                    text = self._extract_text(elem)
+                    if text and len(text) < 100:  # Chips are short
+                        chips_text.append(text)
+
+            for text in chips_text:
+                # Check for salary
+                if not result["salary"] and self._looks_like_salary(text):
+                    normalized = self._normalize_salary_text(text)
+                    if normalized:
+                        result["salary"] = normalized
+                    else:
+                        result["salary"] = text
+                # Check for job type
+                if not result["job_type"]:
+                    _, job_type = self._classify_attribute_text(text)
+                    if job_type:
+                        result["job_type"] = job_type
+
+            # Extract description from detail pane
+            desc_selectors = [
+                "div.jobs-box__html-content#job-details",
+                "div#job-details",
+                "div.jobs-description__content",
+                "div.jobs-description-content__text",
+                "section.jobs-description",
+                "article.jobs-description__container",
+            ]
+            for selector in desc_selectors:
+                elem = self.page.query_selector(selector)
+                if elem:
+                    text = self._extract_text(elem)
+                    if text and len(text) > 50:  # Descriptions should be substantial
+                        result["description"] = text
+                        break
+
+            # Extract posted date from top card
+            date_selectors = [
+                ".job-details-jobs-unified-top-card__tertiary-description-container",
+                ".job-details-jobs-unified-top-card__primary-description-container",
+                ".jobs-unified-top-card__subtitle-secondary-grouping",
+                "span.jobs-unified-top-card__posted-date",
+            ]
+            for selector in date_selectors:
+                elem = self.page.query_selector(selector)
+                if elem:
+                    text = self._extract_text(elem)
+                    # Look for time-related text within the element
+                    if text:
+                        # Split by common separators and find date-like portion
+                        for part in re.split(r'[·•|]', text):
+                            part = part.strip()
+                            if self._looks_like_date_posted(part):
+                                result["date_posted"] = part
+                                break
+                        if result["date_posted"]:
+                            break
+
+        except Exception as exc:
+            logger.debug("Detail pane extraction failed: %s", exc)
+
+        return result
 
     def _serialize_job(self, job: Job) -> dict:
         if hasattr(job, "model_dump"):
@@ -543,6 +642,13 @@ class JobCollector:
         delay_min = self.config.get_detail_salary_delay_min()
         delay_max = self.config.get_detail_salary_delay_max()
         salary_selectors = [
+            # LinkedIn selectors
+            ".job-details-fit-level-preferences li",
+            ".job-details-fit-level-preferences button",
+            ".job-details-fit-level-preferences span",
+            ".job-details-preferences-and-skills li",
+            ".jobs-unified-top-card__job-insight",
+            # Indeed selectors (fallback for other boards)
             "[data-testid='jobsearch-JobInfoHeader-salary']",
             "[data-testid='salary-snippet']",
             "[data-testid='salaryInfoAndJobType']",
@@ -553,6 +659,11 @@ class JobCollector:
             ".salary-snippet",
         ]
         detail_section_selectors = [
+            # LinkedIn selectors
+            ".job-details-jobs-unified-top-card__container--two-pane",
+            "div.jobs-description__content",
+            "div#job-details",
+            # Indeed selectors (fallback)
             "section[aria-label='Job details']",
             "[data-testid='jobDetailsSection']",
             "#jobDetailsSection",
@@ -696,11 +807,15 @@ class JobCollector:
         description = None
         attempt = 0
         selectors = [
+            # LinkedIn selectors (prioritized)
+            "div.jobs-box__html-content#job-details",
+            "div#job-details",
+            "div.jobs-description__content",
+            "div.jobs-box__html-content",
+            "article.jobs-description__container",
             ".show-more-less-html__markup",
             "div.show-more-less-html__markup",
             "section.show-more-less-html",
-            "div.jobs-description__content",
-            "div.jobs-box__html-content",
             "div.description__text",
             "[data-test-id='job-description']",
         ]
@@ -1128,8 +1243,14 @@ class JobCollector:
 
         return jobs
 
-    def _extract_job_from_card(self, card) -> Optional[Job]:
-        """Extract job data from a single job card element"""
+    def _extract_job_from_card(self, card, click_for_details: bool = True) -> Optional[Job]:
+        """Extract job data from a single job card element.
+
+        Args:
+            card: The job card element
+            click_for_details: If True, click the card to load detail pane and extract
+                              salary, job_type, description from there (reduces separate navigations)
+        """
         try:
             # Title
             title_elem = (
@@ -1180,14 +1301,15 @@ class JobCollector:
                 href = f"https://www.linkedin.com{href}"
             href = href.split("?")[0]
 
-            # Salary/job type (rare on LinkedIn)
+            # Salary/job type (rare on LinkedIn list cards)
             job_type = None
 
-            # Description snippet (often not present)
+            # Description snippet (often not present on list card)
             desc_elem = card.query_selector(".job-search-card__snippet")
             description = self._extract_text(desc_elem) if desc_elem else ""
+            description_full = None
 
-            # Date posted
+            # Date posted from card
             date_posted = None
             date_elem = card.query_selector("time")
             if date_elem:
@@ -1200,6 +1322,45 @@ class JobCollector:
                         date_posted = text
                         break
 
+            # Click card to load detail pane and extract additional fields
+            if click_for_details and not self.skip_detail_fetches:
+                try:
+                    # Click the card to show detail pane
+                    clickable = (
+                        card.query_selector("a.job-card-container__link")
+                        or card.query_selector("a.job-card-list__title--link")
+                        or card
+                    )
+                    if clickable:
+                        clickable.click()
+                        # Wait for detail pane to load
+                        try:
+                            self.page.wait_for_selector(
+                                ".job-details-jobs-unified-top-card__container--two-pane, "
+                                "div.jobs-description__content, "
+                                "div#job-details",
+                                timeout=3000
+                            )
+                        except Exception:
+                            pass
+                        time.sleep(0.3)  # Brief settle time
+
+                        # Extract from detail pane
+                        detail_data = self._extract_from_detail_pane()
+
+                        # Merge detail pane data (prefer detail pane over card data)
+                        if detail_data.get("salary") and not salary:
+                            salary = detail_data["salary"]
+                        if detail_data.get("job_type") and not job_type:
+                            job_type = detail_data["job_type"]
+                        if detail_data.get("description"):
+                            description_full = detail_data["description"]
+                        if detail_data.get("date_posted") and not date_posted:
+                            date_posted = detail_data["date_posted"]
+
+                except Exception as exc:
+                    logger.debug("Detail pane click/extract failed: %s", exc)
+
             return Job(
                 title=title.strip(),
                 company=company.strip(),
@@ -1208,6 +1369,7 @@ class JobCollector:
                 salary=salary.strip() if salary else None,
                 job_type=job_type.strip() if job_type else None,
                 description=description.strip(),
+                description_full=description_full.strip() if description_full else None,
                 date_posted=date_posted.strip() if date_posted else None,
                 source="linkedin"
             )
