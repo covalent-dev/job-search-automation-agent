@@ -1259,6 +1259,7 @@ class JobCollector:
         page_index = 0
         while True:
             if not unlimited_pages and page_index >= max_pages:
+                logger.info("Stopping pagination: reached max_pages limit (%s)", max_pages)
                 break
             start = page_index * results_per_page
             url = self._build_search_url(query, start=start)
@@ -1332,7 +1333,7 @@ class JobCollector:
                     Path(f"output/debug_page_{timestamp}.html").write_text(
                         self.page.content(), encoding="utf-8"
                     )
-                    logger.warning("No job cards found with any selector")
+                    logger.info("Stopping pagination: no job cards found on page %s (end of results)", page_index + 1)
                     print("   ⚠️  No job cards found - saved debug screenshot + HTML")
                     break
 
@@ -1430,11 +1431,11 @@ class JobCollector:
                 print(f"   ✓ Collected {len(jobs)} jobs")
 
                 if added_this_page == 0:
-                    logger.info("No new jobs added on page %s; stopping pagination", page_index + 1)
+                    logger.info("Stopping pagination: no new jobs added on page %s (all duplicates or end of results)", page_index + 1)
                     break
 
                 if first_link and last_first_link and first_link == last_first_link:
-                    logger.info("First result repeated on page %s; stopping pagination", page_index + 1)
+                    logger.info("Stopping pagination: first job ID repeated on page %s (page content unchanged)", page_index + 1)
                     break
                 if first_link:
                     last_first_link = first_link
@@ -1450,11 +1451,18 @@ class JobCollector:
                 print(f"   ✗ Error: {e}")
                 break
 
+            # Note: We no longer require a "Next" button to continue pagination.
+            # The start= URL parameter works regardless of UI controls.
+            # We rely on these stop conditions instead:
+            # - max_pages limit (checked at loop start)
+            # - No job cards found (breaks above)
+            # - No new jobs added this page (breaks above)
+            # - First job ID repeated between pages (breaks above)
             if not self._has_next_page():
-                logger.info("No next page control found; stopping pagination")
-                break
+                logger.debug("No next page control visible, but continuing via start= parameter")
 
             if len(jobs) >= query.max_results:
+                logger.info("Stopping pagination: reached max_results (%s)", query.max_results)
                 break
 
             page_index += 1
