@@ -97,6 +97,16 @@ class DedupeStore:
                 if jk:
                     return f"indeed|{jk.strip()}"
 
+        if job.source == "glassdoor":
+            if getattr(job, "external_id", None):
+                return f"glassdoor|{job.external_id.strip()}"
+            if job.link:
+                parsed = urlparse(str(job.link))
+                query = parse_qs(parsed.query)
+                job_id = query.get("jobListingId", [None])[0]
+                if job_id:
+                    return f"glassdoor|{job_id.strip()}"
+
         title = (job.title or "").strip().lower()
         company = (job.company or "").strip().lower()
         location = (job.location or "").strip().lower()

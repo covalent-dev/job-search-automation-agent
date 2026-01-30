@@ -714,14 +714,37 @@ class JobCollector:
         except Exception:
             return None
 
+    def _get_canonical_url(self, url: str) -> str:
+        """
+        Convert Indeed tracking URLs to canonical viewjob URLs when possible.
+        Reduces Cloudflare triggers by avoiding redirect chains.
+        """
+        if not url:
+            return url
+        try:
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            jk = query.get("jk", [None])[0]
+            if jk:
+                canonical = f"https://www.indeed.com/viewjob?jk={jk}"
+                if canonical != url:
+                    logger.debug("Canonicalized URL: %s -> %s", url, canonical)
+                return canonical
+        except Exception:
+            pass
+        return url
+
     def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
         if not self.context or not url:
             return None, None
+
+        fetch_url = self._get_canonical_url(url)
+
         if self.skip_detail_fetches:
             return None, None
 
-        if url in self.detail_salary_cache:
-            return self.detail_salary_cache[url]
+        if fetch_url in self.detail_salary_cache:
+            return self.detail_salary_cache[fetch_url]
 
         timeout_ms = self.config.get_detail_salary_timeout() * 1000
         retries = self.config.get_detail_salary_retries()
@@ -760,7 +783,7 @@ class JobCollector:
                 if delay_max > 0:
                     delay_seconds = random.uniform(delay_min, delay_max)
                     time.sleep(delay_seconds)
-                detail_page.goto(url, wait_until="domcontentloaded")
+                detail_page.goto(fetch_url, wait_until="domcontentloaded")
                 try:
                     detail_page.wait_for_url("**/viewjob?jk=**", timeout=3000)
                 except Exception:
@@ -799,7 +822,7 @@ class JobCollector:
                             self.captcha_debug_saved = True
                         except Exception:
                             pass
-                    action = self._handle_captcha_prompt(detail_page, url, fetch_kind="salary")
+                    action = self._handle_captcha_prompt(detail_page, fetch_url, fetch_kind="salary")
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
@@ -865,7 +888,7 @@ class JobCollector:
                 logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
                 self._random_delay()
 
-        self.detail_salary_cache[url] = (salary, job_type)
+        self.detail_salary_cache[fetch_url] = (salary, job_type)
         return salary, job_type
 
     def _fetch_detail_description(self, url: str) -> Optional[str]:

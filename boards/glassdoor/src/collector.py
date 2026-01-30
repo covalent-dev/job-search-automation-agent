@@ -1552,19 +1552,28 @@ class JobCollector:
             if not href:
                 return None
             metadata = self._extract_glassdoor_metadata(card, link_elem)
-            if "jobListingId=" not in href:
-                job_listing_id = (
-                    metadata.get("jobListingId")
-                    or metadata.get("jobListingID")
-                    or metadata.get("data-joblistingid")
-                    or metadata.get("data-job-listing-id")
-                    or metadata.get("data-job-id")
-                    or metadata.get("data-id")
+            
+            job_listing_id = (
+                metadata.get("jobListingId")
+                or metadata.get("jobListingID")
+                or metadata.get("data-joblistingid")
+                or metadata.get("data-job-listing-id")
+                or metadata.get("data-job-id")
+                or metadata.get("data-id")
+            )
+
+            if not job_listing_id and "jobListingId=" in href:
+                try:
+                    parsed = urlparse(href)
+                    qs = parse_qs(parsed.query)
+                    job_listing_id = (qs.get("jobListingId") or [None])[0]
+                except Exception:
+                    pass
+
+            if job_listing_id and "jobListingId=" not in href:
+                href = self._normalize_glassdoor_link(
+                    f"https://www.glassdoor.com/partner/jobListing.htm?jobListingId={job_listing_id}"
                 )
-                if job_listing_id:
-                    href = self._normalize_glassdoor_link(
-                        f"https://www.glassdoor.com/partner/jobListing.htm?jobListingId={job_listing_id}"
-                    )
 
             location = self._first_text(
                 card,
@@ -1660,6 +1669,7 @@ class JobCollector:
                 company=company.strip(),
                 location=location.strip(),
                 link=href,
+                external_id=str(job_listing_id).strip() if job_listing_id else None,
                 salary=salary.strip() if salary else None,
                 job_type=job_type.strip() if job_type else None,
                 description=description.strip(),
