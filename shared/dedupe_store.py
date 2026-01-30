@@ -111,6 +111,20 @@ class DedupeStore:
             if getattr(job, "external_id", None):
                 return f"linkedin|{job.external_id.strip()}"
 
+        # Use identifier when present (any source)
+        if getattr(job, "identifier", None):
+            source = (job.source or "").strip().lower()
+            return f"{source}|id:{job.identifier.strip()}"
+
+        # RemoteAfrica: fall back to URL slug when identifier is missing
+        if job.source == "remoteafrica" and job.link:
+            parsed = urlparse(str(job.link))
+            path_parts = parsed.path.rstrip("/").split("/")
+            if path_parts:
+                slug = path_parts[-1]
+                if slug:
+                    return f"remoteafrica|slug:{slug}"
+
         title = (job.title or "").strip().lower()
         company = (job.company or "").strip().lower()
         location = (job.location or "").strip().lower()
