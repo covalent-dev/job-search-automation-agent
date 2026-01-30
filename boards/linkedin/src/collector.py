@@ -7,13 +7,14 @@ import json
 import logging
 import os
 import random
+import sys
 import time
 import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse, parse_qs
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
 from captcha_solver import is_solver_configured, maybe_solve_and_inject
@@ -76,6 +77,48 @@ class JobCollector:
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
         self.captcha_auto_solve_attempted_urls: set[str] = set()
+
+    def _extract_linkedin_job_id(self, url: str) -> Optional[str]:
+        """Extract stable LinkedIn job ID from job URL.
+
+        LinkedIn job URLs have formats like:
+        - https://www.linkedin.com/jobs/view/1234567890/
+        - https://www.linkedin.com/jobs/view/1234567890?trackingId=...
+        - https://www.linkedin.com/jobs/collections/.../1234567890/
+
+        Returns the numeric job ID if found, None otherwise.
+        """
+        if not url:
+            return None
+
+        try:
+            parsed = urlparse(url)
+            path = parsed.path.rstrip("/")
+            path_parts = path.split("/")
+
+            # Look for /jobs/view/{job_id} pattern
+            if "view" in path_parts:
+                view_idx = path_parts.index("view")
+                if view_idx + 1 < len(path_parts):
+                    job_id = path_parts[view_idx + 1]
+                    if job_id.isdigit():
+                        return job_id
+
+            # Fallback: look for last numeric segment in path
+            for part in reversed(path_parts):
+                if part.isdigit() and len(part) >= 8:
+                    return part
+
+            # Check query params for currentJobId
+            query = parse_qs(parsed.query)
+            current_job_id = query.get("currentJobId", [None])[0]
+            if current_job_id and current_job_id.isdigit():
+                return current_job_id
+
+        except Exception:
+            logger.debug("Failed to extract LinkedIn job ID from %s", url)
+
+        return None
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -415,6 +458,10 @@ class JobCollector:
             logger.debug("Captcha log write failed", exc_info=True)
 
     def _notify_captcha(self) -> None:
+        if not self.config.is_notifications_enabled():
+            return
+        if sys.platform != "darwin":
+            return
         try:
             subprocess.run(
                 [
@@ -1547,11 +1594,15 @@ class JobCollector:
                 except Exception as exc:
                     logger.debug("Detail pane click/extract failed: %s", exc)
 
+            # Extract stable job ID for cross-run dedupe
+            external_id = self._extract_linkedin_job_id(href)
+
             return Job(
                 title=title.strip(),
                 company=company.strip(),
                 location=location.strip(),
                 link=href,
+                external_id=external_id,
                 salary=salary.strip() if salary else None,
                 job_type=job_type.strip() if job_type else None,
                 description=description.strip(),

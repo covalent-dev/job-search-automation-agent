@@ -107,6 +107,10 @@ class DedupeStore:
                 if job_id:
                     return f"glassdoor|{job_id.strip()}"
 
+        if job.source == "linkedin":
+            if getattr(job, "external_id", None):
+                return f"linkedin|{job.external_id.strip()}"
+
         title = (job.title or "").strip().lower()
         company = (job.company or "").strip().lower()
         location = (job.location or "").strip().lower()
