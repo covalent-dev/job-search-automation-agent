@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
-from models import Job, SearchQuery
-
+try:
+    from models import Job, SearchQuery
+except ModuleNotFoundError:  # pragma: no cover
+    from shared.models import Job, SearchQuery
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
@@ -207,6 +209,46 @@ class JobCollector:
                 self.skip_detail_fetches = True
                 return "skip"
             print("Invalid choice. Please enter 1, 2, or 3.")
+
+
+    def _handle_search_captcha(self, url: str) -> str:
+        self._notify_captcha()
+        print("
+⚠️  CAPTCHA detected during search navigation.")
+        print("Choose how to proceed:")
+        print("  1) Solve manually (pause and retry)")
+        print("  2) Abort run")
+        print("  3) Skip this search query")
+        while True:
+            choice = input("Enter 1, 2, or 3: ").strip()
+            if choice == "1":
+                print("
+Solve the captcha in the browser window, then press ENTER to retry.")
+                input()
+                return "retry"
+            if choice == "2":
+                self.abort_requested = True
+                return "abort"
+            if choice == "3":
+                return "skip"
+            print("Invalid choice. Please enter 1, 2, or 3.")
+
+    def _save_search_debug_artifacts(self, page: 'Page', *, label: str) -> Optional[dict]:
+        try:
+            output_dir = REPO_ROOT / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            stem = f"debug_search_{timestamp}"
+            if label:
+                stem = f"{stem}_{label}"
+            png_path = output_dir / f"{stem}.png"
+            html_path = output_dir / f"{stem}.html"
+            page.screenshot(path=str(png_path))
+            html_path.write_text(page.content(), encoding="utf-8")
+            return {"png": str(png_path), "html": str(html_path)}
+        except Exception:
+            logger.debug("Failed to save search debug artifacts", exc_info=True)
+            return None
 
     def _captcha_backoff(self) -> None:
         if self.captcha_consecutive <= 0:
@@ -959,6 +1001,32 @@ class JobCollector:
                     print("   ✗ Failed to load search page")
                     break
 
+
+                captcha_detection = self._is_captcha_page(self.page)
+                if captcha_detection:
+                    artifacts = self._save_search_debug_artifacts(self.page, label="captcha")
+                    logger.warning(
+                        "Search page blocked by captcha (reason=%s, title=%s, url=%s, artifacts=%s)",
+                        captcha_detection["reason"],
+                        captcha_detection["title"],
+                        captcha_detection["url"],
+                        artifacts,
+                    )
+                    action = self._handle_search_captcha(url)
+                    logger.warning(
+                        "Search captcha action=%s (query=%s, page=%s, url=%s)",
+                        action,
+                        query,
+                        page_index + 1,
+                        url,
+                    )
+                    if action == "abort":
+                        raise CaptchaAbort("User requested abort after captcha")
+                    if action == "skip":
+                        break
+                    if action == "retry":
+                        continue
+
                 # Simulate human behavior before interacting with page
                 self._simulate_human_behavior()
                 self._random_delay()
@@ -984,10 +1052,76 @@ class JobCollector:
                         continue
 
                 if not job_cards:
-                    # Debug: save screenshot and HTML
-                    self.page.screenshot(path="output/debug_screenshot.png")
-                    logger.warning("No job cards found with any selector")
-                    print("   ⚠️  No job cards found - saved debug screenshot")
+
+                    captcha_detection = self._is_captcha_page(self.page)
+
+                    if captcha_detection:
+
+                        artifacts = self._save_search_debug_artifacts(self.page, label="captcha")
+
+                        logger.warning(
+
+                            "Search page blocked by captcha after selector failures (reason=%s, title=%s, url=%s, artifacts=%s)",
+
+                            captcha_detection["reason"],
+
+                            captcha_detection["title"],
+
+                            captcha_detection["url"],
+
+                            artifacts,
+
+                        )
+
+                        action = self._handle_search_captcha(url)
+
+                        logger.warning(
+
+                            "Search captcha action=%s (query=%s, page=%s, url=%s)",
+
+                            action,
+
+                            query,
+
+                            page_index + 1,
+
+                            url,
+
+                        )
+
+                        if action == "abort":
+
+                            raise CaptchaAbort("User requested abort after captcha")
+
+                        if action == "skip":
+
+                            break
+
+                        if action == "retry":
+
+                            continue
+
+
+                    artifacts = self._save_search_debug_artifacts(self.page, label="no_job_cards")
+
+                    logger.warning(
+
+                        "No job cards found with any selector (query=%s, page=%s, url=%s, artifacts=%s, selectors=%s)",
+
+                        query,
+
+                        page_index + 1,
+
+                        url,
+
+                        artifacts,
+
+                        selectors,
+
+                    )
+
+                    print("   ⚠️  No job cards found - saved debug screenshot + HTML")
+
                     break
 
                 try:
