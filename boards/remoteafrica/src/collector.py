@@ -183,6 +183,19 @@ class JobCollector:
                 applicant_location_requirements = names
 
         job_location_type = payload.get("jobLocationType") or None
+
+        # Normalize location for RemoteAfrica: if location is generic remote label
+        # but applicant_location_requirements has geo data, derive a better location string
+        normalized_location = location
+        generic_remote_labels = {"fully remote", "remote", "", None}
+        if (location or "").strip().lower() in generic_remote_labels and applicant_location_requirements:
+            geo_parts = applicant_location_requirements[:3]  # Limit to first 3
+            extra_count = len(applicant_location_requirements) - 3
+            geo_str = ", ".join(geo_parts)
+            if extra_count > 0:
+                geo_str += f" +{extra_count} more"
+            normalized_location = f"Remote ({geo_str})"
+
         return {
             "title": title,
             "company": company,
@@ -191,7 +204,7 @@ class JobCollector:
             "identifier": identifier_value,
             "description": description_text,
             "description_raw": description_raw,
-            "location": location,
+            "location": normalized_location,
             "salary": salary,
             "job_type": job_type,
             "applicant_location_requirements": applicant_location_requirements,

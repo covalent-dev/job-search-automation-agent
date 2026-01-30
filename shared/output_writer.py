@@ -95,6 +95,17 @@ class OutputWriter:
                     lines.append(f"**Salary:** {job.salary}  ")
                 if job.job_type and "remote" in job.location.lower():
                     lines.append(f"**Job Type:** {job.job_type}  ")
+                # Show geo restriction for RemoteAfrica jobs
+                if job.source == "remoteafrica":
+                    if job.applicant_location_requirements:
+                        reqs = job.applicant_location_requirements[:5]
+                        extra = len(job.applicant_location_requirements) - 5
+                        geo_str = ", ".join(reqs)
+                        if extra > 0:
+                            geo_str += f" +{extra} more"
+                        lines.append(f"**Geo Restriction:** {geo_str}  ")
+                    if job.job_location_type:
+                        lines.append(f"**Location Type:** {job.job_location_type}  ")
                 if job.date_posted:
                     lines.append(f"**Posted:** {job.date_posted}  ")
                 if job.ai_score is not None:
