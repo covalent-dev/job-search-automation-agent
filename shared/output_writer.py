@@ -95,6 +95,14 @@ class OutputWriter:
                     lines.append(f"**Salary:** {job.salary}  ")
                 if job.job_type and "remote" in job.location.lower():
                     lines.append(f"**Job Type:** {job.job_type}  ")
+                # Show company rating for Glassdoor jobs
+                if job.company_rating is not None:
+                    rating_str = f"⭐ {job.company_rating:.1f}/5"
+                    if job.company_review_count:
+                        rating_str += f" ({job.company_review_count:,} reviews)"
+                    lines.append(f"**Rating:** {rating_str}  ")
+                if job.company_recommend_pct is not None:
+                    lines.append(f"**Recommend:** {job.company_recommend_pct}%  ")
                 # Show geo restriction for RemoteAfrica jobs
                 if job.source == "remoteafrica":
                     if job.applicant_location_requirements:
@@ -123,8 +131,12 @@ class OutputWriter:
         lines.append("---\n")
         lines.append("## Summary Table\n")
         show_ai = any(job.ai_score is not None for job in jobs)
+        show_rating = any(job.company_rating is not None for job in jobs)
         header = "| # | Title | Company | Location | Source | Salary | Job Type |"
         separator = "|---|-------|---------|----------|--------|--------|----------|"
+        if show_rating:
+            header += " Rating |"
+            separator += "--------|"
         if show_ai:
             header += " AI |"
             separator += "----|"
@@ -146,6 +158,9 @@ class OutputWriter:
                 salary=_escape_md(salary),
                 job_type=_escape_md(job_type),
             )
+            if show_rating:
+                rating = f"{job.company_rating:.1f}" if job.company_rating is not None else "-"
+                row += f" {_escape_md(rating)} |"
             if show_ai:
                 ai_score = f"{job.ai_score}/10" if job.ai_score is not None else "-"
                 row += f" {_escape_md(ai_score)} |"

@@ -172,7 +172,7 @@ class JobCollector:
         self.session_file = SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
         self.max_retries = self.config.get_max_retries()
-        self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
+        self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str], Optional[float], Optional[int], Optional[int]]] = {}
         self.detail_description_cache: dict[str, Optional[str]] = {}
         self.skip_detail_fetches = False
         self.detail_debug_saved = False
@@ -1497,12 +1497,19 @@ class JobCollector:
                                     fetch_label,
                                     job.link,
                                 )
-                                detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
+                                detail_salary, detail_job_type, detail_rating, detail_review_count, detail_recommend_pct = self._fetch_detail_salary(str(job.link))
                                 print("")
                                 if detail_salary:
                                     job.salary = detail_salary
                                 if detail_job_type:
                                     job.job_type = detail_job_type
+                                # Update rating fields from detail page if not already set
+                                if detail_rating and not job.company_rating:
+                                    job.company_rating = detail_rating
+                                if detail_review_count and not job.company_review_count:
+                                    job.company_review_count = detail_review_count
+                                if detail_recommend_pct is not None and job.company_recommend_pct is None:
+                                    job.company_recommend_pct = detail_recommend_pct
                                 detail_fetches += 1
 
                             if (
