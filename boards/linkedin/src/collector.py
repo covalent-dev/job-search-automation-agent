@@ -57,6 +57,7 @@ class JobCollector:
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
         self.detail_description_cache: dict[str, Optional[str]] = {}
         self.skip_detail_fetches = False
+        self.skip_detail_fetches_logged = False
         self.detail_debug_saved = False
         self.detail_description_debug_saved = False
         self.captcha_debug_saved = False
@@ -785,6 +786,9 @@ class JobCollector:
         if not self.context or not url:
             return None, None
         if self.skip_detail_fetches:
+            if not self.skip_detail_fetches_logged:
+                logger.info("Skipping optional detail salary fetches (skip mode active)")
+                self.skip_detail_fetches_logged = True
             return None, None
 
         if url in self.detail_salary_cache:
@@ -948,6 +952,9 @@ class JobCollector:
         if not self.context or not url:
             return None
         if self.skip_detail_fetches:
+            if not self.skip_detail_fetches_logged:
+                logger.info("Skipping optional detail description fetches (skip mode active)")
+                self.skip_detail_fetches_logged = True
             return None
         if url in self.detail_description_cache:
             return self.detail_description_cache[url]
@@ -1500,7 +1507,9 @@ class JobCollector:
                         break
 
             # Click card to load detail pane and extract additional fields
-            if click_for_details and not self.skip_detail_fetches:
+            # NOTE: Detail pane extraction always runs - it's the primary strategy.
+            # skip_detail_fetches only disables optional separate page navigations.
+            if click_for_details:
                 try:
                     # Click the card to show detail pane
                     clickable = (
