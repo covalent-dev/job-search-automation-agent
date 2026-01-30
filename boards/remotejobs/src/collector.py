@@ -1417,6 +1417,7 @@ class JobCollector:
                                 self.current_board == "remotejobs"
                                 and job.link
                                 and job.company == "Unknown Company"
+                                and self.config.is_detail_company_enabled()
                                 and not self.skip_detail_fetches
                                 and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
                             ):
@@ -1595,6 +1596,8 @@ class JobCollector:
             )
             title = title or "Unknown Title"
 
+            # NOTE: RemoteJobs listing cards do not typically contain the company name.
+            # It usually requires a detail page fetch. This extraction is a fallback.
             company = self._first_text(
                 card,
                 [

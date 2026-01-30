@@ -113,6 +113,10 @@ class ConfigLoader:
     def get_detail_description_delay_max(self) -> float:
         """Get maximum delay between detail description fetches in seconds"""
         return float(self.get('search.detail_description_delay_max', 2.0))
+
+    def is_detail_company_enabled(self) -> bool:
+        """Check if detail company fetch is enabled"""
+        return bool(self.get('search.detail_company_fetch', True))
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""
