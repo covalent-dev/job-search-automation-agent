@@ -7,11 +7,41 @@ Reads and validates settings.yaml
 import yaml
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigValidationError(ValueError):
+    """Raised when configuration fails invariant validation."""
+    pass
+
+
+def _validate_non_negative(value: Any, field: str) -> None:
+    """Validate that a numeric value is non-negative."""
+    if value is not None and float(value) < 0:
+        raise ConfigValidationError(
+            f"Invalid config: '{field}' must be non-negative, got {value}"
+        )
+
+
+def _validate_positive(value: Any, field: str) -> None:
+    """Validate that a numeric value is positive (> 0)."""
+    if value is not None and float(value) <= 0:
+        raise ConfigValidationError(
+            f"Invalid config: '{field}' must be positive (> 0), got {value}"
+        )
+
+
+def _validate_min_max_pair(min_val: Any, max_val: Any, min_field: str, max_field: str) -> None:
+    """Validate that min_val <= max_val for a delay/range pair."""
+    if min_val is not None and max_val is not None:
+        if float(min_val) > float(max_val):
+            raise ConfigValidationError(
+                f"Invalid config: '{min_field}' ({min_val}) must be <= '{max_field}' ({max_val})"
+            )
 
 
 class ConfigLoader:
@@ -26,7 +56,7 @@ class ConfigLoader:
         """Load config from YAML file"""
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
-        
+
         try:
             with open(self.config_path, 'r') as f:
                 self.config = yaml.safe_load(f)
@@ -34,6 +64,65 @@ class ConfigLoader:
         except yaml.YAMLError as e:
             logger.error(f"Error parsing config file: {e}")
             raise
+
+        self._validate_invariants()
+
+    def _validate_invariants(self) -> None:
+        """Validate configuration invariants. Raises ConfigValidationError on failure."""
+        # Browser delay range
+        min_delay = self.get('browser.min_delay')
+        max_delay = self.get('browser.max_delay')
+        _validate_non_negative(min_delay, 'browser.min_delay')
+        _validate_non_negative(max_delay, 'browser.max_delay')
+        _validate_min_max_pair(min_delay, max_delay, 'browser.min_delay', 'browser.max_delay')
+
+        # Browser timeouts (must be positive)
+        _validate_positive(self.get('browser.page_timeout'), 'browser.page_timeout')
+        _validate_positive(self.get('browser.navigation_timeout'), 'browser.navigation_timeout')
+        _validate_positive(self.get('browser.launch_timeout'), 'browser.launch_timeout')
+
+        # Browser retries (non-negative)
+        _validate_non_negative(self.get('browser.max_retries'), 'browser.max_retries')
+
+        # Detail salary fetch settings
+        salary_delay_min = self.get('search.detail_salary_delay_min')
+        salary_delay_max = self.get('search.detail_salary_delay_max')
+        _validate_non_negative(salary_delay_min, 'search.detail_salary_delay_min')
+        _validate_non_negative(salary_delay_max, 'search.detail_salary_delay_max')
+        _validate_min_max_pair(
+            salary_delay_min, salary_delay_max,
+            'search.detail_salary_delay_min', 'search.detail_salary_delay_max'
+        )
+        _validate_positive(self.get('search.detail_salary_timeout'), 'search.detail_salary_timeout')
+        _validate_non_negative(self.get('search.detail_salary_retries'), 'search.detail_salary_retries')
+        _validate_non_negative(self.get('search.detail_salary_max_per_query'), 'search.detail_salary_max_per_query')
+
+        # Detail description fetch settings
+        desc_delay_min = self.get('search.detail_description_delay_min')
+        desc_delay_max = self.get('search.detail_description_delay_max')
+        _validate_non_negative(desc_delay_min, 'search.detail_description_delay_min')
+        _validate_non_negative(desc_delay_max, 'search.detail_description_delay_max')
+        _validate_min_max_pair(
+            desc_delay_min, desc_delay_max,
+            'search.detail_description_delay_min', 'search.detail_description_delay_max'
+        )
+        _validate_positive(self.get('search.detail_description_timeout'), 'search.detail_description_timeout')
+        _validate_non_negative(self.get('search.detail_description_retries'), 'search.detail_description_retries')
+        _validate_non_negative(self.get('search.detail_description_max_per_query'), 'search.detail_description_max_per_query')
+
+        # Search limits (non-negative)
+        _validate_non_negative(self.get('search.max_results_per_search'), 'search.max_results_per_search')
+        _validate_non_negative(self.get('search.max_pages'), 'search.max_pages')
+
+        # AI filter settings
+        _validate_non_negative(self.get('ai_filter.max_retries'), 'ai_filter.max_retries')
+        _validate_non_negative(self.get('ai_filter.max_reasoning_chars'), 'ai_filter.max_reasoning_chars')
+
+        # Captcha settings
+        _validate_positive(self.get('captcha.solve_timeout_seconds') or self.get('captcha.timeout'), 'captcha.solve_timeout_seconds')
+        _validate_non_negative(self.get('captcha.max_solve_attempts') or self.get('captcha.max_retries'), 'captcha.max_solve_attempts')
+
+        logger.debug("✓ Config invariants validated")
     
     def get(self, key: str, default: Any = None) -> Any:
         """Get config value by dot notation (e.g., 'search.keywords')"""
