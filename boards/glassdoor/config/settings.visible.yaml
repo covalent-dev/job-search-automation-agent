@@ -1,0 +1,60 @@
+# Glassdoor config profile: visible (debug / manual observation)
+# Non-headless + slower pacing for troubleshooting selectors, sessions, and captchas.
+# Usage: ./scripts/run_board.sh glassdoor config/settings.visible.yaml
+search:
+  keywords:
+  - AI engineer
+  - AI/ML engineer
+  - machine learning engineer
+  - AI systems engineer
+  - AI infrastructure engineer
+  - AI platform engineer
+  - MLOps engineer
+  - LLM engineer
+  - LLM ops engineer
+  - RAG engineer
+  - generative AI engineer
+  - AI automation engineer
+  location: Remote
+  max_results_per_search: 3
+  max_pages: 1
+  detail_salary_fetch: true
+  detail_salary_timeout: 9
+  detail_salary_retries: 1
+  detail_salary_max_per_query: 0
+  detail_salary_delay_min: 2.5
+  detail_salary_delay_max: 4.0
+  detail_description_fetch: true
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 2.5
+  detail_description_delay_max: 4.0
+  job_boards:
+  - glassdoor
+output:
+  json_file: output/jobs_{timestamp}.json
+  markdown_file: output/jobs_{timestamp}.md
+  summary_file: output/run_summary_{timestamp}.json
+  config_snapshot_file: output/config_snapshot_{timestamp}.yaml
+  use_timestamp: true
+  vault_sync:
+    enabled: true
+    vault_path: /Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/glassdoor
+browser:
+  headless: false
+  min_delay: 3.0
+  max_delay: 5.0
+  page_timeout: 45
+  navigation_timeout: 60
+  launch_timeout: 60
+  max_retries: 2
+  channel: ''
+  executable_path: ''
+  use_stealth: true
+dedupe:
+  enabled: true
+  hash_file: output/dedupe_hashes.jsonl
+logging:
+  level: INFO
+  log_file: logs/job_bot_{timestamp}.log

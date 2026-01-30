@@ -90,6 +90,12 @@ job-search-automation/
 
 ## Configuration
 
+This board ships with multiple config profiles under `config/`:
+- `config/settings.yaml` - default balanced run (headless + stealth + normal delays)
+- `config/settings.headless.yaml` - headless production profile (stealth enabled, extra delays)
+- `config/settings.visible.yaml` - non-headless debug profile (slow, small sample, full extraction)
+
+
 Edit `config/settings.yaml` to customize:
 - Search keywords and location
 - Output file paths
