@@ -122,6 +122,15 @@ class ConfigLoader:
         _validate_positive(self.get('captcha.solve_timeout_seconds') or self.get('captcha.timeout'), 'captcha.solve_timeout_seconds')
         _validate_non_negative(self.get('captcha.max_solve_attempts') or self.get('captcha.max_retries'), 'captcha.max_solve_attempts')
 
+        # Proxy settings (validated only when enabled)
+        if self.is_proxy_enabled():
+            try:
+                _ = self.get_playwright_proxy()
+            except Exception as exc:
+                raise ConfigValidationError(str(exc)) from exc
+            _validate_positive(self.get_proxy_pool_size(), 'browser.proxy.pool_size')
+            _validate_non_negative(self.get_proxy_session_ttl_seconds(), 'browser.proxy.session_ttl_seconds')
+
         logger.debug("✓ Config invariants validated")
     
     def get(self, key: str, default: Any = None) -> Any:
@@ -326,13 +335,58 @@ class ConfigLoader:
         """Check if Playwright proxy should be enabled (disabled by default)."""
         return bool(self.get("browser.proxy.enabled", False))
 
+    def get_proxy_provider(self) -> str:
+        provider = (self.get("browser.proxy.provider", "") or os.getenv("PROXY_PROVIDER") or "").strip().lower()
+        return provider or "generic"
+
+    def get_proxy_pool_size(self) -> int:
+        value = self.get("browser.proxy.pool_size", 1)
+        try:
+            return max(int(value), 1)
+        except Exception:
+            return 1
+
+    def is_proxy_sticky_session_enabled(self) -> bool:
+        return bool(self.get("browser.proxy.sticky_session", True))
+
+    def get_proxy_session_scope(self) -> str:
+        scope = (self.get("browser.proxy.session_scope", "run") or "run").strip().lower()
+        return scope if scope in ("run", "query") else "run"
+
+    def get_proxy_session_ttl_seconds(self) -> int:
+        value = self.get("browser.proxy.session_ttl_seconds", 0)
+        try:
+            return max(int(value), 0)
+        except Exception:
+            return 0
+
+    def should_rotate_proxy_on_captcha(self) -> bool:
+        return bool(self.get("browser.proxy.rotate_on_captcha", False))
+
+    def should_rotate_proxy_on_failure(self) -> bool:
+        return bool(self.get("browser.proxy.rotate_on_failure", False))
+
+    def get_proxy_username_template(self) -> Optional[str]:
+        template = (self.get("browser.proxy.username_template", "") or "").strip()
+        return template or None
+
     def _get_proxy_server_raw(self) -> str:
         server = (self.get("browser.proxy.server", "") or "").strip()
         if server:
             return server
 
-        host = (self.get("browser.proxy.host", "") or os.getenv("PROXY_HOST") or "").strip()
-        port = str(self.get("browser.proxy.port", "") or os.getenv("PROXY_PORT") or "").strip()
+        host = (
+            (self.get("browser.proxy.host", "") or "").strip()
+            or (os.getenv("IPROYAL_HOST") or "").strip()
+            or (os.getenv("IPROYAL_PROXY_HOST") or "").strip()
+            or (os.getenv("PROXY_HOST") or "").strip()
+        )
+        port = str(
+            (self.get("browser.proxy.port", "") or "").strip()
+            or (os.getenv("IPROYAL_PORT") or "").strip()
+            or (os.getenv("IPROYAL_PROXY_PORT") or "").strip()
+            or (os.getenv("PROXY_PORT") or "").strip()
+        ).strip()
         if host and port:
             return f"{host}:{port}"
         return ""
@@ -358,8 +412,18 @@ class ConfigLoader:
         server = server_raw if "://" in server_raw else f"http://{server_raw}"
         proxy: Dict[str, str] = {"server": server}
 
-        username = (self.get("browser.proxy.username", "") or os.getenv("PROXY_USER") or "").strip()
-        password = (self.get("browser.proxy.password", "") or os.getenv("PROXY_PASS") or "").strip()
+        username = (
+            (self.get("browser.proxy.username", "") or "").strip()
+            or (os.getenv("IPROYAL_USER") or "").strip()
+            or (os.getenv("IPROYAL_USERNAME") or "").strip()
+            or (os.getenv("PROXY_USER") or "").strip()
+        )
+        password = (
+            (self.get("browser.proxy.password", "") or "").strip()
+            or (os.getenv("IPROYAL_PASS") or "").strip()
+            or (os.getenv("IPROYAL_PASSWORD") or "").strip()
+            or (os.getenv("PROXY_PASS") or "").strip()
+        )
         if username:
             proxy["username"] = username
         if password:
@@ -369,6 +433,45 @@ class ConfigLoader:
 
     # Alias for backward compatibility
     get_proxy_config = get_playwright_proxy
+
+    def get_proxy_manager_settings(self) -> Dict[str, Any]:
+        """
+        Return settings for shared.proxy_manager.ProxyManager.
+
+        Sticky session behavior is provider-specific and handled by ProxyManager.
+        """
+        enabled = self.is_proxy_enabled()
+        base_username = (
+            (self.get("browser.proxy.username", "") or "").strip()
+            or (os.getenv("IPROYAL_USER") or "").strip()
+            or (os.getenv("IPROYAL_USERNAME") or "").strip()
+            or (os.getenv("PROXY_USER") or "").strip()
+        )
+        base_password = (
+            (self.get("browser.proxy.password", "") or "").strip()
+            or (os.getenv("IPROYAL_PASS") or "").strip()
+            or (os.getenv("IPROYAL_PASSWORD") or "").strip()
+            or (os.getenv("PROXY_PASS") or "").strip()
+        )
+        server = ""
+        if enabled:
+            proxy = self.get_playwright_proxy()
+            server = proxy["server"]
+
+        return {
+            "enabled": bool(enabled),
+            "provider": self.get_proxy_provider(),
+            "server": server,
+            "username": base_username,
+            "password": base_password,
+            "username_template": self.get_proxy_username_template(),
+            "sticky_session": self.is_proxy_sticky_session_enabled(),
+            "session_scope": self.get_proxy_session_scope(),
+            "pool_size": self.get_proxy_pool_size(),
+            "session_ttl_seconds": self.get_proxy_session_ttl_seconds(),
+            "rotate_on_captcha": self.should_rotate_proxy_on_captcha(),
+            "rotate_on_failure": self.should_rotate_proxy_on_failure(),
+        }
     
     # === AI Config ===
     
