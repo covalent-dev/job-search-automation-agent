@@ -42,6 +42,8 @@ config/*.local.yaml
 **/config/session.json
 **/config/session.json.*
 **/config/*.local.yaml
+**/config/test-*.yaml
+**/config/test_*.yaml
 
 # IDE
 .vscode/

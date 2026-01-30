@@ -1,0 +1,44 @@
+search:
+  # Keywords are mostly informational for Remote4Africa (collector uses a global list),
+  # but they still drive the SearchQuery display and max_results cap.
+  keywords: ["developer", "engineer", "python"]
+  location: Remote
+  max_results_per_search: 25
+  max_pages: 2
+  job_boards: ["remoteafrica"]
+  detail_salary_fetch: false
+  detail_description_fetch: true
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  # 0 means unlimited for detail-* caps (but NOT for max_results_per_search).
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.0
+  detail_description_delay_max: 2.0
+
+browser:
+  headless: true
+  min_delay: 0.4
+  max_delay: 1.2
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  use_stealth: false
+
+ai_filter:
+  enabled: false
+
+dedupe:
+  enabled: false
+  hash_file: output/test-runs/dedupe_hashes.jsonl
+
+output:
+  json_file: output/test-runs/jobs_{timestamp}.json
+  markdown_file: output/test-runs/jobs_{timestamp}.md
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+logging:
+  level: INFO
+  log_file: logs/test-runs/testing_{timestamp}.log

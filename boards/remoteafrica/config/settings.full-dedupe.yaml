@@ -1,0 +1,45 @@
+search:
+  keywords: ["developer", "engineer", "python"]
+  location: Remote
+  # NOTE: max_results_per_search=0 will collect 0 jobs immediately.
+  # Use a high cap + max_pages=0 to run until pagination ends.
+  max_results_per_search: 1000
+  # 0 means unlimited pages (collector stops when there's no next page link).
+  max_pages: 0
+  job_boards: ["remoteafrica"]
+  detail_salary_fetch: false
+  detail_description_fetch: true
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 0.8
+  detail_description_delay_max: 1.6
+
+browser:
+  headless: true
+  min_delay: 0.3
+  max_delay: 0.9
+  page_timeout: 45
+  navigation_timeout: 60
+  launch_timeout: 60
+  max_retries: 2
+  use_stealth: false
+
+ai_filter:
+  enabled: false
+
+dedupe:
+  enabled: true
+  # Stable cross-run store: run once to populate, run again to get 0 results.
+  hash_file: output/dedupe_hashes.jsonl
+
+output:
+  json_file: output/test-runs/full_jobs_{timestamp}.json
+  markdown_file: output/test-runs/full_jobs_{timestamp}.md
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+logging:
+  level: INFO
+  log_file: logs/test-runs/full_dedupe_{timestamp}.log
