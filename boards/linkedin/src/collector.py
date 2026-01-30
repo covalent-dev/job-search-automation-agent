@@ -64,6 +64,7 @@ class JobCollector:
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
+        self.captcha_auto_solve_attempted_urls: set[str] = set()
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -106,9 +107,44 @@ class JobCollector:
             except Exception:
                 continue
 
-    def _handle_search_captcha(self, url: str) -> str:
+    def _try_auto_solve_captcha(self, page: Page, url: str, *, context: str) -> bool:
+        if not page or not url:
+            return False
+        if url in self.captcha_auto_solve_attempted_urls:
+            return False
+        if not is_solver_configured(self.config):
+            return False
+
+        self.captcha_auto_solve_attempted_urls.add(url)
+        print("\n🤖 Attempting automatic captcha solve (if supported)...")
+        solved = maybe_solve_and_inject(page, self.config, context=context)
+        if not solved:
+            return False
+
+        try:
+            page.wait_for_timeout(1500)
+        except Exception:
+            pass
+
+        try:
+            submit_button = page.query_selector("form button[type='submit'], button[type='submit']")
+            if submit_button:
+                try:
+                    if submit_button.is_visible():
+                        submit_button.click(timeout=1000)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return True
+
+    def _handle_search_captcha(self, page: Page, url: str) -> str:
         self._notify_captcha()
         print("\n⚠️  CAPTCHA or auth wall detected on search page.")
+        if self._try_auto_solve_captcha(page, url, context="search"):
+            print("✅ Auto-solve attempted; retrying.")
+            return "retry"
         print("Choose how to proceed:")
         print("  1) Solve manually (pause and retry)")
         print("  2) Abort run")
@@ -380,10 +416,13 @@ class JobCollector:
         except Exception:
             logger.debug("Captcha notification failed", exc_info=True)
 
-    def _handle_captcha_prompt(self, url: str) -> str:
+    def _handle_captcha_prompt(self, page: Page, url: str) -> str:
         self._log_captcha(url)
         self._notify_captcha()
-        print("\n⚠️  CAPTCHA detected during detail salary fetch.")
+        print("\n⚠️  CAPTCHA detected during detail fetch.")
+        if self._try_auto_solve_captcha(page, url, context="detail"):
+            print("✅ Auto-solve attempted; retrying.")
+            return "retry"
         print("Choose how to proceed:")
         print("  1) Solve manually (pause and resume)")
         print("  2) Abort run (save collected data)")
@@ -829,7 +868,7 @@ class JobCollector:
                             self.captcha_debug_saved = True
                         except Exception:
                             pass
-                    action = self._handle_captcha_prompt(url)
+                    action = self._handle_captcha_prompt(detail_page, url)
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
@@ -951,7 +990,7 @@ class JobCollector:
                         captcha_detection["url"],
                     )
                     self._captcha_backoff()
-                    action = self._handle_captcha_prompt(url)
+                    action = self._handle_captcha_prompt(detail_page, url)
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
@@ -1044,43 +1083,54 @@ class JobCollector:
             logger.warning("Browser executable not found: %s", executable_path)
             executable_path = None
 
+        # Build proxy config if enabled
+        proxy_config = self.config.get_proxy_config()
+        if proxy_config:
+            logger.info("Proxy enabled: %s", proxy_config.get("server", ""))
+        else:
+            logger.info("Proxy disabled")
+
         # Check if persistent profile exists (preferred method)
         if self.user_data_dir.exists():
             logger.info(f"Using persistent profile: {self.user_data_dir}")
-            self.context = self.playwright.chromium.launch_persistent_context(
-                user_data_dir=str(self.user_data_dir),
-                headless=self.config.is_headless(),
-                viewport={"width": 1280, "height": 800},
-                args=[
+            launch_kwargs = {
+                "user_data_dir": str(self.user_data_dir),
+                "headless": self.config.is_headless(),
+                "viewport": {"width": 1280, "height": 800},
+                "args": [
                     "--disable-blink-features=AutomationControlled",
                     "--disable-dev-shm-usage",
                 ],
-                channel=channel,
-                executable_path=executable_path,
-                timeout=launch_timeout,
-            )
+                "channel": channel,
+                "executable_path": executable_path,
+                "timeout": launch_timeout,
+            }
+            if proxy_config:
+                launch_kwargs["proxy"] = proxy_config
+            self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
             # Fallback to session file or new context
             logger.info("No persistent profile found, using regular context")
-            self.browser = self.playwright.chromium.launch(
-                headless=self.config.is_headless(),
-                channel=channel,
-                executable_path=executable_path,
-                timeout=launch_timeout,
-            )
+            launch_kwargs = {
+                "headless": self.config.is_headless(),
+                "channel": channel,
+                "executable_path": executable_path,
+                "timeout": launch_timeout,
+            }
+            if proxy_config:
+                launch_kwargs["proxy"] = proxy_config
+            self.browser = self.playwright.chromium.launch(**launch_kwargs)
 
+            context_kwargs = {"viewport": {"width": 1280, "height": 800}}
+            if proxy_config:
+                context_kwargs["proxy"] = proxy_config
             if self.session_file.exists():
                 logger.info(f"Loading session from {self.session_file}")
-                self.context = self.browser.new_context(
-                    storage_state=str(self.session_file),
-                    viewport={"width": 1280, "height": 800},
-                )
+                context_kwargs["storage_state"] = str(self.session_file)
             else:
                 logger.warning("No session found - run setup_session.py first!")
-                self.context = self.browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                )
+            self.context = self.browser.new_context(**context_kwargs)
 
             self.page = self.context.new_page()
 
@@ -1180,7 +1230,7 @@ class JobCollector:
                     Path(f"output/search_captcha_{timestamp}.html").write_text(
                         self.page.content(), encoding="utf-8"
                     )
-                    action = self._handle_search_captcha(url)
+                    action = self._handle_search_captcha(self.page, url)
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if not self._safe_goto(url):

@@ -85,18 +85,22 @@ def create_search_queries(config) -> list[SearchQuery]:
     keywords = config.get_keywords()
     location = config.get_location()
     max_results = config.get_max_results()
+    job_boards = config.get_job_boards()
 
-    total = len(keywords)
-    for idx, keyword in enumerate(keywords, start=1):
-        query = SearchQuery(
-            keyword=keyword,
-            location=location,
-            max_results=max_results,
-            job_board="target-site"
-        )
-        query.index = idx
-        query.total = total
-        queries.append(query)
+    total = len(keywords) * len(job_boards)
+    idx = 0
+    for job_board in job_boards:
+        for keyword in keywords:
+            idx += 1
+            query = SearchQuery(
+                keyword=keyword,
+                location=location,
+                max_results=max_results,
+                job_board=job_board
+            )
+            query.index = idx
+            query.total = total
+            queries.append(query)
 
     return queries
 
