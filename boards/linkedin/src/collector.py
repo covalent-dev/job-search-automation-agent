@@ -16,15 +16,25 @@ from typing import List, Optional
 from urllib.parse import quote_plus
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
+from captcha_solver import is_solver_configured, maybe_solve_and_inject
+
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover
+    load_dotenv = None
 
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_NAME = REPO_ROOT.name
 PROFILE_ROOT = Path.home() / ".job-search-automation"
 # Match the profile naming used by setup_session.py
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
+
+if load_dotenv is not None:
+    load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
 
 
 class CaptchaAbort(Exception):

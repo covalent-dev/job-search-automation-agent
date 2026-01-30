@@ -273,6 +273,9 @@ class ConfigLoader:
             proxy["password"] = password
 
         return proxy
+
+    # Alias for backward compatibility
+    get_proxy_config = get_playwright_proxy
     
     # === AI Config ===
     
