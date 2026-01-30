@@ -18,6 +18,7 @@ from urllib.parse import quote_plus, urlparse, parse_qs
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
 from captcha_solver import is_solver_configured, maybe_solve_and_inject
+from proxy_manager import ProxyManager
 
 try:
     from dotenv import load_dotenv
@@ -47,6 +48,7 @@ class JobCollector:
 
     def __init__(self, config):
         self.config = config
+        self.proxy_manager = ProxyManager.from_config(config)
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
@@ -77,6 +79,44 @@ class JobCollector:
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
         self.captcha_auto_solve_attempted_urls: set[str] = set()
+
+    def _can_prompt(self) -> bool:
+        """Return True only when a human can reasonably respond to prompts."""
+        try:
+            return bool(sys.stdin.isatty()) and not self.config.is_headless()
+        except Exception:
+            return False
+
+    def _proxy_affinity_key(self) -> str:
+        return self.current_query or "run"
+
+    def _rotate_proxy_and_restart(self, *, reason: str) -> bool:
+        """
+        Rotate proxy session and restart Playwright.
+
+        Playwright proxy settings are fixed per browser launch/context, so
+        rotation necessarily implies a browser/context restart.
+        """
+        if not self.proxy_manager or not self.proxy_manager.is_enabled():
+            return False
+
+        try:
+            self.proxy_manager.rotate(self._proxy_affinity_key(), reason=reason)
+        except Exception as exc:
+            logger.warning("Proxy rotation failed (reason=%s): %s", reason, exc)
+            return False
+
+        try:
+            self.stop_browser()
+        except Exception:
+            logger.debug("Failed to stop browser during proxy rotation", exc_info=True)
+
+        try:
+            self.start_browser()
+            return True
+        except Exception as exc:
+            logger.error("Failed to restart browser after proxy rotation: %s", exc)
+            return False
 
     def _extract_linkedin_job_id(self, url: str) -> Optional[str]:
         """Extract stable LinkedIn job ID from job URL.
@@ -199,6 +239,17 @@ class JobCollector:
         if self._try_auto_solve_captcha(page, url, context="search"):
             print("✅ Auto-solve attempted; retrying.")
             return "retry"
+        if self.proxy_manager.should_rotate_on_captcha() and self._rotate_proxy_and_restart(reason="captcha_search"):
+            print("🔄 Rotated proxy session; retrying.")
+            return "retry"
+        policy = self.config.get_captcha_on_detect()
+        if not self._can_prompt():
+            if policy == "abort":
+                self.abort_requested = True
+                return "abort"
+            if policy == "pause":
+                logger.warning("captcha.on_detect=pause requested but prompts are disabled; skipping query")
+            return "skip_query"
         print("Choose how to proceed:")
         print("  1) Solve manually (pause and retry)")
         print("  2) Abort run")
@@ -481,6 +532,18 @@ class JobCollector:
         if self._try_auto_solve_captcha(page, url, context="detail"):
             print("✅ Auto-solve attempted; retrying.")
             return "retry"
+        if self.proxy_manager.should_rotate_on_captcha() and self._rotate_proxy_and_restart(reason="captcha_detail"):
+            print("🔄 Rotated proxy session; retrying.")
+            return "retry"
+        policy = self.config.get_captcha_on_detect()
+        if not self._can_prompt():
+            if policy == "abort":
+                self.abort_requested = True
+                return "abort"
+            if policy == "pause":
+                logger.warning("captcha.on_detect=pause requested but prompts are disabled; skipping detail fetches")
+            self.skip_detail_fetches = True
+            return "skip"
         print("Choose how to proceed:")
         print("  1) Solve manually (pause and resume)")
         print("  2) Abort run (save collected data)")
@@ -1116,6 +1179,13 @@ class JobCollector:
             except Exception as exc:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
                 self._random_delay()
+                if attempt == self.max_retries and self.proxy_manager.should_rotate_on_failure():
+                    if self._rotate_proxy_and_restart(reason="navigation_failure"):
+                        try:
+                            self.page.goto(url, wait_until="domcontentloaded")
+                            return True
+                        except Exception as exc2:
+                            logger.warning("Navigation still failing after proxy rotation: %s", exc2)
         return False
 
     def _has_next_page(self) -> bool:
@@ -1152,7 +1222,7 @@ class JobCollector:
             executable_path = None
 
         # Build proxy config if enabled
-        proxy_config = self.config.get_proxy_config()
+        proxy_config = self.proxy_manager.get_playwright_proxy(self._proxy_affinity_key())
         if proxy_config:
             logger.info("Proxy enabled: %s", proxy_config.get("server", ""))
         else:
@@ -1287,12 +1357,14 @@ class JobCollector:
                 self._random_delay()
                 captcha_detection = self._is_captcha_page(self.page)
                 if captcha_detection:
+                    self.captcha_consecutive += 1
                     logger.warning(
                         "Search page blocked (reason=%s, title=%s, url=%s)",
                         captcha_detection["reason"],
                         captcha_detection["title"],
                         captcha_detection["url"],
                     )
+                    self._captcha_backoff()
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     Path("output").mkdir(parents=True, exist_ok=True)
                     self.page.screenshot(path=f"output/search_captcha_{timestamp}.png")
@@ -1302,10 +1374,15 @@ class JobCollector:
                     action = self._handle_search_captcha(self.page, url)
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
+                    if action == "skip_query":
+                        logger.warning("Skipping query due to captcha policy (query=%s)", query)
+                        break
                     if not self._safe_goto(url):
                         logger.warning("Failed to reload after captcha")
                         break
                     self._random_delay()
+                else:
+                    self.captcha_consecutive = 0
                 self._dismiss_linkedin_overlays()
                 self._scroll_results()
 

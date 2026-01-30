@@ -53,6 +53,68 @@ class TwoCaptchaSolver:
             data=data,
         )
 
+        return self._poll_until_solved(
+            request_id=request_id,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+    def solve_hcaptcha(
+        self,
+        *,
+        sitekey: str,
+        page_url: str,
+        timeout_seconds: int = 180,
+        poll_interval_seconds: int = 5,
+    ) -> str:
+        sitekey = (sitekey or "").strip()
+        page_url = (page_url or "").strip()
+        if not sitekey:
+            raise ValueError("hcaptcha sitekey is required")
+        if not page_url:
+            raise ValueError("hcaptcha page_url is required")
+
+        request_id = self._submit_hcaptcha(sitekey=sitekey, page_url=page_url)
+        return self._poll_until_solved(
+            request_id=request_id,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+    def solve_recaptcha_v2(
+        self,
+        *,
+        sitekey: str,
+        page_url: str,
+        invisible: Optional[bool] = None,
+        timeout_seconds: int = 180,
+        poll_interval_seconds: int = 5,
+    ) -> str:
+        sitekey = (sitekey or "").strip()
+        page_url = (page_url or "").strip()
+        if not sitekey:
+            raise ValueError("recaptcha sitekey is required")
+        if not page_url:
+            raise ValueError("recaptcha page_url is required")
+
+        request_id = self._submit_recaptcha_v2(
+            sitekey=sitekey,
+            page_url=page_url,
+            invisible=invisible,
+        )
+        return self._poll_until_solved(
+            request_id=request_id,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+    def _poll_until_solved(
+        self,
+        *,
+        request_id: str,
+        timeout_seconds: int,
+        poll_interval_seconds: int,
+    ) -> str:
         deadline = time.monotonic() + max(int(timeout_seconds), 1)
         poll_interval = max(float(poll_interval_seconds), 1.0)
 
@@ -90,6 +152,46 @@ class TwoCaptchaSolver:
         if data:
             payload["data"] = data
 
+        resp = self._post_json("/in.php", payload)
+        if resp.get("status") != 1:
+            raise CaptchaSolveError(f"2captcha submit error: {resp.get('request')}")
+        request_id = (resp.get("request") or "").strip()
+        if not request_id:
+            raise CaptchaSolveError("2captcha submit returned empty request id")
+        return request_id
+
+    def _submit_hcaptcha(self, *, sitekey: str, page_url: str) -> str:
+        payload = {
+            "key": self._api_key,
+            "method": "hcaptcha",
+            "sitekey": sitekey,
+            "pageurl": page_url,
+            "json": 1,
+        }
+        resp = self._post_json("/in.php", payload)
+        if resp.get("status") != 1:
+            raise CaptchaSolveError(f"2captcha submit error: {resp.get('request')}")
+        request_id = (resp.get("request") or "").strip()
+        if not request_id:
+            raise CaptchaSolveError("2captcha submit returned empty request id")
+        return request_id
+
+    def _submit_recaptcha_v2(
+        self,
+        *,
+        sitekey: str,
+        page_url: str,
+        invisible: Optional[bool],
+    ) -> str:
+        payload = {
+            "key": self._api_key,
+            "method": "userrecaptcha",
+            "googlekey": sitekey,
+            "pageurl": page_url,
+            "json": 1,
+        }
+        if invisible is True:
+            payload["invisible"] = 1
         resp = self._post_json("/in.php", payload)
         if resp.get("status") != 1:
             raise CaptchaSolveError(f"2captcha submit error: {resp.get('request')}")
@@ -141,4 +243,3 @@ class TwoCaptchaSolver:
         if not isinstance(data, dict):
             raise CaptchaSolveError("2captcha returned unexpected response shape")
         return data
-

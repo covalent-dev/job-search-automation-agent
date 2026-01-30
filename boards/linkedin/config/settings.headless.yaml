@@ -67,3 +67,13 @@ dedupe:
 logging:
   level: INFO
   log_file: logs/job_bot_{timestamp}.log
+
+# Captcha auto-solve (optional; requires provider API key via .env)
+captcha:
+  enabled: false
+  provider: "2captcha"
+  api_key_env: "CAPTCHA_API_KEY"
+  solve_timeout_seconds: 180
+  max_solve_attempts: 2
+  poll_interval_seconds: 5
+  on_detect: "skip"  # abort | skip | pause
