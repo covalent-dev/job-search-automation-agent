@@ -10,6 +10,7 @@ import random
 import time
 import re
 import subprocess
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -30,6 +31,15 @@ class CaptchaAbort(Exception):
     """Raised when user opts to abort after captcha."""
 
 
+@dataclass
+class DetailPageData:
+    """Holds all data extracted from a job detail page."""
+    salary: Optional[str] = None
+    job_type: Optional[str] = None
+    company: Optional[str] = None
+    description: Optional[str] = None
+
+
 class JobCollector:
     """Collects job listings using Playwright browser automation"""
 
@@ -46,6 +56,7 @@ class JobCollector:
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
         self.detail_description_cache: dict[str, Optional[str]] = {}
         self.detail_company_cache: dict[str, Optional[str]] = {}
+        self.detail_page_cache: dict[str, DetailPageData] = {}
         self.skip_detail_fetches = False
         self.detail_debug_saved = False
         self.detail_description_debug_saved = False
@@ -657,6 +668,230 @@ class JobCollector:
             return None
         except Exception:
             return None
+
+    def _fetch_detail_page(self, url: str) -> DetailPageData:
+        """Single consolidated detail page fetch that extracts all available data."""
+        if not self.context or not url:
+            return DetailPageData()
+        if self.skip_detail_fetches:
+            return DetailPageData()
+
+        if url in self.detail_page_cache:
+            return self.detail_page_cache[url]
+
+        timeout_ms = self.config.get_detail_salary_timeout() * 1000
+        retries = self.config.get_detail_salary_retries()
+        delay_min = self.config.get_detail_salary_delay_min()
+        delay_max = self.config.get_detail_salary_delay_max()
+        job_board = (self.current_board or "").lower()
+
+        if job_board == "remotejobs":
+            salary_selectors = [
+                ".salary", ".job-salary", ".jobSalary",
+                "[class*='salary']", "[class*='Salary']",
+                "[class*='pay']", "[class*='Pay']",
+                "[class*='compensation']", "[class*='Compensation']",
+                "[data-testid='salary']", "[data-testid='jobSalary']",
+                "[data-test='salary']",
+                "section[class*='salary']", "div[class*='salary']",
+            ]
+            detail_section_selectors = [
+                "#jobDescriptionText", ".jobsearch-JobComponent-description",
+                "#jobDetailsSection", "[data-testid='jobDetailsSection']",
+                "[data-testid='jobDescriptionText']",
+                "div.job-description", "div.jobDescription",
+                "[class*='job-description']", "[class*='jobDescription']",
+                "article", "main",
+            ]
+            description_selectors = [
+                "#jobDescriptionText", "[data-testid='jobDescriptionText']",
+                ".jobsearch-jobDescriptionText", ".jobsearch-JobComponent-description",
+                "#jobDetailsSection", "[data-testid='jobDetailsSection']",
+                "div.job-description", ".job-description", ".jobDescription",
+                "div[class*='job-description']", "div[class*='jobDescription']",
+                "div[class*='JobDescription']",
+            ]
+        else:
+            salary_selectors = [
+                "[data-testid='jobsearch-JobInfoHeader-salary']",
+                "[data-testid='salary-snippet']",
+                "[data-testid='salaryInfoAndJobType']",
+                "#salaryInfoAndJobType",
+                "[data-testid='jobMetadataHeader']",
+                ".jobsearch-JobMetadataHeader-item",
+                ".jobsearch-JobMetadataHeader-iconLabel",
+                ".salary-snippet",
+            ]
+            detail_section_selectors = [
+                "section[aria-label='Job details']",
+                "[data-testid='jobDetailsSection']",
+                "#jobDetailsSection",
+            ]
+            description_selectors = [
+                "#jobDescriptionText", "[data-testid='jobDescriptionText']",
+                ".jobsearch-jobDescriptionText",
+                "#jobDetailsSection", "[data-testid='jobDetailsSection']",
+            ]
+
+        data = DetailPageData()
+        attempt = 0
+
+        while attempt < retries:
+            try:
+                attempt += 1
+                if self.detail_salary_page is not None and self.detail_salary_page.is_closed():
+                    self.detail_salary_page = None
+                if self.detail_salary_page is None:
+                    self.detail_salary_page = self.context.new_page()
+                    self.detail_salary_page.set_default_timeout(timeout_ms)
+                    self.detail_salary_page.set_default_navigation_timeout(timeout_ms)
+                detail_page = self.detail_salary_page
+
+                if delay_max > 0:
+                    delay_seconds = random.uniform(delay_min, delay_max)
+                    time.sleep(delay_seconds)
+
+                detail_page.goto(url, wait_until="domcontentloaded")
+
+                if job_board != "remotejobs":
+                    try:
+                        detail_page.wait_for_url("**/viewjob?jk=**", timeout=3000)
+                    except Exception:
+                        pass
+
+                try:
+                    detail_page.wait_for_selector(
+                        ", ".join(detail_section_selectors), timeout=3000
+                    )
+                except Exception:
+                    pass
+
+                for selector in salary_selectors + detail_section_selectors:
+                    try:
+                        detail_page.wait_for_selector(selector, timeout=2000)
+                        break
+                    except Exception:
+                        continue
+
+                captcha_detection = self._is_captcha_page(detail_page)
+                if captcha_detection:
+                    self.captcha_consecutive += 1
+                    logger.warning(
+                        "Detail page fetch blocked by captcha (reason=%s, title=%s, url=%s)",
+                        captcha_detection["reason"],
+                        captcha_detection["title"],
+                        captcha_detection["url"],
+                    )
+                    self._captcha_backoff()
+                    if not self.captcha_debug_saved:
+                        try:
+                            Path("output").mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            detail_page.screenshot(path=f"output/detail_captcha_{timestamp}.png")
+                            Path(f"output/detail_captcha_{timestamp}.html").write_text(
+                                detail_page.content(), encoding="utf-8"
+                            )
+                            self.captcha_debug_saved = True
+                        except Exception:
+                            pass
+                    action = self._handle_captcha_prompt(url)
+                    if action == "abort":
+                        raise CaptchaAbort("User requested abort after captcha")
+                    if action == "skip":
+                        return DetailPageData()
+                    if action == "retry":
+                        self.detail_salary_page = None
+                        attempt = max(attempt - 1, 0)
+                        continue
+                else:
+                    self.captcha_consecutive = 0
+
+                # Extract salary and job_type from JSON-LD
+                if self.config.is_detail_salary_enabled():
+                    json_salary, json_job_type = self._extract_salary_from_json_ld(detail_page)
+                    if json_salary:
+                        data.salary = json_salary
+                    if json_job_type:
+                        data.job_type = json_job_type
+
+                    # Also try DOM-based extraction
+                    text_chunks = []
+                    for selector in salary_selectors:
+                        for element in detail_page.query_selector_all(selector):
+                            text = self._extract_text(element)
+                            if text:
+                                text_chunks.append(text)
+                    for selector in detail_section_selectors:
+                        for element in detail_page.query_selector_all(selector):
+                            text = self._extract_text(element)
+                            if text:
+                                text_chunks.append(text)
+                    for text in text_chunks:
+                        found_salary, found_job_type = self._classify_attribute_text(text)
+                        if found_salary and not data.salary:
+                            data.salary = found_salary
+                        if found_job_type and not data.job_type:
+                            data.job_type = found_job_type
+                        if data.salary and data.job_type:
+                            break
+
+                # Extract company
+                if job_board == "remotejobs":
+                    detail_company = self._extract_company_from_detail_page(detail_page)
+                    if detail_company:
+                        data.company = detail_company
+
+                # Extract description
+                if self.config.is_detail_description_enabled():
+                    for selector in description_selectors:
+                        elem = detail_page.query_selector(selector)
+                        text = self._extract_text(elem)
+                        if text and (not data.description or len(text) > len(data.description)):
+                            data.description = text
+
+                # Debug output if no salary found
+                if self.config.is_detail_salary_enabled() and not data.salary and not self.detail_debug_saved:
+                    try:
+                        Path("output").mkdir(parents=True, exist_ok=True)
+                        detail_page.screenshot(path="output/detail_debug.png")
+                        Path("output/detail_debug.html").write_text(
+                            detail_page.content(), encoding="utf-8"
+                        )
+                        self.detail_debug_saved = True
+                    except Exception:
+                        pass
+
+                # Debug output if no description found
+                if self.config.is_detail_description_enabled() and not data.description and not self.detail_description_debug_saved:
+                    try:
+                        Path("output").mkdir(parents=True, exist_ok=True)
+                        detail_page.screenshot(path="output/detail_description_debug.png")
+                        Path("output/detail_description_debug.html").write_text(
+                            detail_page.content(), encoding="utf-8"
+                        )
+                        self.detail_description_debug_saved = True
+                    except Exception:
+                        pass
+
+                # Successfully loaded page - break retry loop
+                break
+
+            except Exception as exc:
+                if isinstance(exc, CaptchaAbort):
+                    raise
+                if "Target page, context or browser has been closed" in str(exc):
+                    self.detail_salary_page = None
+                logger.warning("Detail page fetch failed (attempt %s/%s): %s", attempt, retries, exc)
+                self._random_delay()
+
+        # Cache individual fields for backward compatibility
+        self.detail_salary_cache[url] = (data.salary, data.job_type)
+        self.detail_description_cache[url] = data.description
+        if data.company:
+            self.detail_company_cache[url] = data.company
+
+        self.detail_page_cache[url] = data
+        return data
 
     def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
         if not self.context or not url:

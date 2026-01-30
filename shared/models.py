@@ -32,6 +32,11 @@ class Job(BaseModel):
     date_posted: Optional[str] = None
     collected_at: datetime = Field(default_factory=datetime.now)
     
+    # Glassdoor company ratings
+    company_rating: Optional[float] = None  # 1.0-5.0 scale
+    company_review_count: Optional[int] = None
+    company_recommend_pct: Optional[int] = None  # 0-100
+
     # AI scoring (Phase 5)
     ai_score: Optional[int] = None  # 1-10 rating
     ai_reasoning: Optional[str] = None

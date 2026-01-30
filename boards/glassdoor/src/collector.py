@@ -727,11 +727,129 @@ class JobCollector:
         except Exception:
             return None
 
-    def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
+    def _extract_rating_from_page(self, page: Page) -> tuple[Optional[float], Optional[int], Optional[int]]:
+        """Extract company rating, review count, and recommend percentage from a page."""
+        company_rating = None
+        company_review_count = None
+        company_recommend_pct = None
+
+        rating_selectors = [
+            "span[data-test='rating']",
+            "div[data-test='rating']",
+            "[data-test='employer-rating']",
+            ".EmployerProfile_ratingContainer__*",
+            "[class*='RatingContainer']",
+            "[class*='rating']",
+            "span[class*='ratingNum']",
+            ".rating",
+        ]
+
+        for selector in rating_selectors:
+            elem = page.query_selector(selector)
+            if elem:
+                text = self._extract_text(elem)
+                if text:
+                    rating_match = re.search(r"(\d+(?:\.\d+)?)", text)
+                    if rating_match:
+                        try:
+                            rating_val = float(rating_match.group(1))
+                            if 0 < rating_val <= 5:
+                                company_rating = rating_val
+                                break
+                        except (ValueError, TypeError):
+                            pass
+
+        review_selectors = [
+            "span[data-test='reviewCount']",
+            "div[data-test='reviewCount']",
+            "[data-test='employer-review-count']",
+            ".EmployerProfile_reviewCount__*",
+            "[class*='reviewCount']",
+            "[class*='numReviews']",
+        ]
+
+        for selector in review_selectors:
+            elem = page.query_selector(selector)
+            if elem:
+                text = self._extract_text(elem)
+                if text:
+                    review_match = re.search(r"([\d,]+)", text)
+                    if review_match:
+                        try:
+                            company_review_count = int(review_match.group(1).replace(",", ""))
+                            break
+                        except (ValueError, TypeError):
+                            pass
+
+        recommend_selectors = [
+            "[data-test='recommend']",
+            "[data-test='recommendToFriend']",
+            "[class*='recommend']",
+        ]
+
+        for selector in recommend_selectors:
+            elem = page.query_selector(selector)
+            if elem:
+                text = self._extract_text(elem)
+                if text:
+                    pct_match = re.search(r"(\d+)\s*%", text)
+                    if pct_match:
+                        try:
+                            pct_val = int(pct_match.group(1))
+                            if 0 <= pct_val <= 100:
+                                company_recommend_pct = pct_val
+                                break
+                        except (ValueError, TypeError):
+                            pass
+
+        # Also check JSON-LD for rating data
+        if not company_rating:
+            for script in page.query_selector_all("script[type='application/ld+json']"):
+                raw = self._extract_text(script)
+                if not raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    continue
+                items = data if isinstance(data, list) else [data]
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    # Check for aggregateRating
+                    agg_rating = item.get("aggregateRating")
+                    if isinstance(agg_rating, dict):
+                        rating_val = agg_rating.get("ratingValue")
+                        if rating_val:
+                            try:
+                                company_rating = float(rating_val)
+                            except (ValueError, TypeError):
+                                pass
+                        review_count = agg_rating.get("reviewCount")
+                        if review_count and not company_review_count:
+                            try:
+                                company_review_count = int(review_count)
+                            except (ValueError, TypeError):
+                                pass
+                    # Check hiringOrganization
+                    hiring_org = item.get("hiringOrganization")
+                    if isinstance(hiring_org, dict):
+                        org_rating = hiring_org.get("aggregateRating")
+                        if isinstance(org_rating, dict) and not company_rating:
+                            rating_val = org_rating.get("ratingValue")
+                            if rating_val:
+                                try:
+                                    company_rating = float(rating_val)
+                                except (ValueError, TypeError):
+                                    pass
+
+        return company_rating, company_review_count, company_recommend_pct
+
+    def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str], Optional[float], Optional[int], Optional[int]]:
         if not self.context or not url:
-            return None, None
+            return None, None, None, None, None
         if self.skip_detail_fetches:
-            return None, None
+            return None, None, None, None, None
 
         if url in self.detail_salary_cache:
             return self.detail_salary_cache[url]
@@ -783,6 +901,9 @@ class JobCollector:
 
         salary = None
         job_type = None
+        company_rating = None
+        company_review_count = None
+        company_recommend_pct = None
 
         attempt = 0
         while attempt < retries:
@@ -842,7 +963,7 @@ class JobCollector:
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
-                        return None, None
+                        return None, None, None, None, None
                     if action == "retry":
                         self.detail_salary_page = None
                         attempt = max(attempt - 1, 0)
@@ -879,6 +1000,16 @@ class JobCollector:
                     if salary and job_type:
                         break
 
+                # Extract company rating from detail page (Glassdoor only)
+                if job_board == "glassdoor":
+                    page_rating, page_review_count, page_recommend_pct = self._extract_rating_from_page(detail_page)
+                    if page_rating and not company_rating:
+                        company_rating = page_rating
+                    if page_review_count and not company_review_count:
+                        company_review_count = page_review_count
+                    if page_recommend_pct is not None and company_recommend_pct is None:
+                        company_recommend_pct = page_recommend_pct
+
                 if not salary and not self.detail_debug_saved:
                     try:
                         Path("output").mkdir(parents=True, exist_ok=True)
@@ -890,7 +1021,7 @@ class JobCollector:
                     except Exception:
                         pass
 
-                if salary or job_type:
+                if salary or job_type or company_rating:
                     break
 
             except Exception as exc:
@@ -901,8 +1032,8 @@ class JobCollector:
                 logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
                 self._random_delay()
 
-        self.detail_salary_cache[url] = (salary, job_type)
-        return salary, job_type
+        self.detail_salary_cache[url] = (salary, job_type, company_rating, company_review_count, company_recommend_pct)
+        return salary, job_type, company_rating, company_review_count, company_recommend_pct
 
     def _fetch_detail_description(self, url: str) -> Optional[str]:
         if not self.context or not url:
@@ -1664,6 +1795,48 @@ class JobCollector:
                 ],
             )
 
+            # Extract company rating from card
+            company_rating = None
+            company_review_count = None
+            rating_text = self._first_text(
+                card,
+                [
+                    "span[data-test='rating']",
+                    "div[data-test='rating']",
+                    ".EmployerProfile_ratingContainer__*",
+                    "[class*='RatingContainer']",
+                    "[class*='rating']",
+                    "span[class*='ratingNum']",
+                ],
+            )
+            if rating_text:
+                rating_match = re.search(r"(\d+(?:\.\d+)?)", rating_text)
+                if rating_match:
+                    try:
+                        rating_val = float(rating_match.group(1))
+                        if 0 < rating_val <= 5:
+                            company_rating = rating_val
+                    except (ValueError, TypeError):
+                        pass
+
+            review_text = self._first_text(
+                card,
+                [
+                    "span[data-test='reviewCount']",
+                    "div[data-test='reviewCount']",
+                    ".EmployerProfile_reviewCount__*",
+                    "[class*='reviewCount']",
+                    "[class*='numReviews']",
+                ],
+            )
+            if review_text:
+                review_match = re.search(r"([\d,]+)", review_text)
+                if review_match:
+                    try:
+                        company_review_count = int(review_match.group(1).replace(",", ""))
+                    except (ValueError, TypeError):
+                        pass
+
             return Job(
                 title=title.strip(),
                 company=company.strip(),
@@ -1674,6 +1847,8 @@ class JobCollector:
                 job_type=job_type.strip() if job_type else None,
                 description=description.strip(),
                 date_posted=date_posted.strip() if date_posted else None,
+                company_rating=company_rating,
+                company_review_count=company_review_count,
                 source="glassdoor",
             )
 
