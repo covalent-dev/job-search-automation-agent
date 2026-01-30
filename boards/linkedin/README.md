@@ -1,97 +1,41 @@
-# Job Search Automation
+# LinkedIn Board
 
-Automated job search and aggregation using Playwright. Testing phase
+LinkedIn job collector for the Job Search Automation Agent monorepo.
 
-## Status: v0.0 (Testing)
+## Quick Start
 
-Currently testing browser automation fundamentals. Session management works, locator strategies identified.
-
-## What's Working (v0.0)
-
-**Session Management:**
-- Saves login cookies to JSON
-- No re-login needed across runs
-
-**Locator Testing Results:**
-- `get_by_role`: 1 exact match (most reliable)
-- `get_by_text`: 4 matches (good fallback)
-- CSS selectors: 3 matches (works)
-- XPath: functional but fragile
-- Class names: breaks on UI updates (avoid)
-
-**Key Learnings:**
-- `get_by_role` is production-ready
-- `wait_until="domcontentloaded"` for React apps
-- Never use `time.sleep()` with Playwright
-
-**De-duplication:**
-- Cross-run dedupe via hash log
-- Within-run dedupe uses job links
-
-## Tech Stack
-
-- Python 3.x
-- Playwright (browser automation)
-- Ollama + DeepSeek (AI filtering, coming v0.2)
-
-## Setup
 ```bash
-git clone https://github.com/covalent-dev/job-search-automation.git
-cd job-search-automation
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
+# From repo root
 pip install -r requirements.txt
 playwright install chromium
 
-# First time: Setup session (solve captcha once)
-python src/setup_session.py
+# One-time (or when session expires): create auth artifacts for LinkedIn
+JOB_BOT_BOARD=linkedin python3 shared/setup_session.py
 
-# Run the bot
-python src/main.py
+# Run collection
+./scripts/run_board.sh linkedin
 ```
 
-## Session Management
+## Session / Auth State (Source of Truth)
 
-Job sites use Cloudflare protection. Run `setup_session.py` first to:
-1. Open a browser window
-2. Solve the captcha manually
-3. Save the session cookies
+The LinkedIn collector prefers a **persistent Playwright profile** and uses a
+storage-state JSON only as a fallback.
 
-After setup, `main.py` reuses the saved session to bypass captcha.
-Note: Playwright may open an extra `about:blank` tab for automation control. Leave it open during runs.
+**Preferred (persistent profile):**
+- `~/.job-search-automation/job-search-automation-linkedin-profile/`
 
-## Structure
-```
-job-search-automation/
-├── config/
-│   ├── settings.yaml
-│   └── session.json      # Saved after setup (gitignored)
-├── src/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── setup_session.py  # Run once to save session
-│   ├── collector.py
-│   ├── output_writer.py
-│   ├── models.py
-│   └── config_loader.py
-├── output/
-├── logs/
-├── requirements.txt
-└── README.md
-```
+**Fallback (storage state, gitignored):**
+- `boards/linkedin/config/session.json`
 
-## Configuration
+On startup, the collector will:
+1. Use the persistent profile if it exists.
+2. Otherwise, load `boards/linkedin/config/session.json` if present.
+3. Otherwise, run without auth state and warn you to run setup.
 
-Edit `config/settings.yaml` to customize:
-- Search keywords and location
-- Output file paths
-- Browser behavior (headless mode, delays)
-- AI scoring options (Ollama)
-- Cross-run de-duplication log
+**Legacy compatibility:** if `config/session.json` exists at the repo root, the
+collector can still load it, but the preferred location is
+`boards/linkedin/config/session.json`.
 
-Headless runs (optional):
-- `python src/main.py --config config/settings.headless.yaml`
+## Output
+
+- `boards/linkedin/output/` for JSON/Markdown exports and run artifacts.

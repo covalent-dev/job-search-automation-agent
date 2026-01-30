@@ -27,10 +27,11 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-SESSION_FILE = Path("config/session.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_NAME = REPO_ROOT.name
+SESSION_FILE = REPO_ROOT / "config" / "session.json"
+LEGACY_SESSION_FILE = PROJECT_ROOT / "config" / "session.json"
 PROFILE_ROOT = Path.home() / ".job-search-automation"
 # Match the profile naming used by setup_session.py
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
@@ -55,6 +56,7 @@ class JobCollector:
         self.detail_salary_page: Optional[Page] = None
         self.detail_description_page: Optional[Page] = None
         self.session_file = SESSION_FILE
+        self.legacy_session_file = LEGACY_SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
         self.max_retries = self.config.get_max_retries()
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
@@ -1266,8 +1268,21 @@ class JobCollector:
             if self.session_file.exists():
                 logger.info(f"Loading session from {self.session_file}")
                 context_kwargs["storage_state"] = str(self.session_file)
+            elif self.legacy_session_file.exists():
+                logger.warning(
+                    "Loading legacy session from %s (preferred location is %s)",
+                    self.legacy_session_file,
+                    self.session_file,
+                )
+                context_kwargs["storage_state"] = str(self.legacy_session_file)
             else:
-                logger.warning("No session found - run setup_session.py first!")
+                logger.warning(
+                    "No session found. Expected profile at %s or storage state at %s (legacy: %s). "
+                    "Run `JOB_BOT_BOARD=linkedin python shared/setup_session.py` from repo root.",
+                    self.user_data_dir,
+                    self.session_file,
+                    self.legacy_session_file,
+                )
             self.context = self.browser.new_context(**context_kwargs)
 
             self.page = self.context.new_page()
