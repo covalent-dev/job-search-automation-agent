@@ -47,13 +47,6 @@ browser:
   channel: ''
   executable_path: ''
   use_stealth: true
-  proxy:
-    enabled: false
-    server: ''
-    host: ''
-    port: ''
-    username: ''
-    password: ''
 ai_filter:
   enabled: true
   model: deepseek-coder-v2:latest
