@@ -10,6 +10,7 @@ import random
 import time
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -188,55 +189,78 @@ class JobCollector:
         except Exception:
             logger.debug("Captcha notification failed", exc_info=True)
 
-    def _handle_captcha_prompt(self, url: str) -> str:
+    def _handle_captcha_prompt(self, url: str, *, fetch_kind: str) -> str:
         self._log_captcha(url)
         self._notify_captcha()
-        print("\n⚠️  CAPTCHA detected during detail salary fetch.")
-        print("Choose how to proceed:")
-        print("  1) Solve manually (pause and resume)")
-        print("  2) Abort run (save collected data)")
-        print("  3) Skip remaining detail fetches (continue without salaries)")
-        while True:
-            choice = input("Enter 1, 2, or 3: ").strip()
-            if choice == "1":
-                print("\nSolve the captcha in the browser window, then press ENTER to continue.")
+
+        policy = (self.config.get_captcha_on_detect() or "skip").strip().lower()
+        if policy not in ("abort", "skip", "pause"):
+            logger.warning("Invalid captcha policy %r; defaulting to 'skip'", policy)
+            policy = "skip"
+
+        is_tty = False
+        try:
+            is_tty = bool(sys.stdin.isatty())
+        except Exception:
+            is_tty = False
+
+        if policy == "pause":
+            if not is_tty:
+                logger.warning(
+                    "Captcha policy is pause but stdin is not interactive; skipping remaining detail fetches"
+                )
+                policy = "skip"
+            else:
+                print(f"\n⚠️  CAPTCHA detected during detail {fetch_kind} fetch.")
+                print("Solve the captcha in the browser window, then press ENTER to continue.")
                 input()
                 return "retry"
-            if choice == "2":
-                print(
-                    f"\nCollected {self.total_jobs_collected} jobs with "
-                    f"{self.total_jobs_with_salary} salaries."
-                )
-                self.abort_requested = True
-                return "abort"
-            if choice == "3":
-                print("\nSkipping remaining detail salary fetches for this run.")
-                self.skip_detail_fetches = True
-                return "skip"
-            print("Invalid choice. Please enter 1, 2, or 3.")
+
+        if policy == "abort":
+            print(
+                f"\nCollected {self.total_jobs_collected} jobs with "
+                f"{self.total_jobs_with_salary} salaries."
+            )
+            self.abort_requested = True
+            return "abort"
+
+        print(f"\nSkipping remaining detail fetches for this run (captcha policy={policy}).")
+        self.skip_detail_fetches = True
+        return "skip"
 
 
     def _handle_search_captcha(self, url: str) -> str:
         self._notify_captcha()
-        print("
-⚠️  CAPTCHA detected during search navigation.")
-        print("Choose how to proceed:")
-        print("  1) Solve manually (pause and retry)")
-        print("  2) Abort run")
-        print("  3) Skip this search query")
-        while True:
-            choice = input("Enter 1, 2, or 3: ").strip()
-            if choice == "1":
-                print("
-Solve the captcha in the browser window, then press ENTER to retry.")
+
+        policy = (self.config.get_captcha_on_detect() or "skip").strip().lower()
+        if policy not in ("abort", "skip", "pause"):
+            logger.warning("Invalid captcha policy %r; defaulting to 'skip'", policy)
+            policy = "skip"
+
+        is_tty = False
+        try:
+            is_tty = bool(sys.stdin.isatty())
+        except Exception:
+            is_tty = False
+
+        if policy == "pause":
+            if not is_tty:
+                logger.warning(
+                    "Captcha policy is pause but stdin is not interactive; skipping this search query"
+                )
+                policy = "skip"
+            else:
+                print("\n⚠️  CAPTCHA detected during search navigation.")
+                print("Solve the captcha in the browser window, then press ENTER to retry.")
                 input()
                 return "retry"
-            if choice == "2":
-                self.abort_requested = True
-                return "abort"
-            if choice == "3":
-                return "skip"
-            print("Invalid choice. Please enter 1, 2, or 3.")
+
+        if policy == "abort":
+            self.abort_requested = True
+            return "abort"
+
+        print("\nSkipping this search query due to captcha.")
+        return "skip"
 
     def _save_search_debug_artifacts(self, page: 'Page', *, label: str) -> Optional[dict]:
         try:
@@ -785,6 +809,28 @@ Solve the captcha in the browser window, then press ENTER to retry.")
         channel = self.config.get_browser_channel() or None
         executable_path = self.config.get_browser_executable_path() or None
         launch_timeout = self.config.get_launch_timeout()
+        proxy = None
+
+        def _looks_like_proxy_failure(message: str) -> bool:
+            msg = (message or "").lower()
+            markers = (
+                "err_proxy_connection_failed",
+                "err_tunnel_connection_failed",
+                "proxy authentication",
+                "authentication required",
+                "proxy",
+                "407",
+            )
+            return any(marker in msg for marker in markers)
+
+        try:
+            proxy = self.config.get_playwright_proxy()
+        except Exception as exc:
+            logger.error("Proxy configuration error: %s", exc)
+            raise
+
+        if proxy:
+            logger.info("Proxy enabled: %s", proxy.get("server"))
 
         if executable_path and not Path(executable_path).exists():
             logger.warning("Browser executable not found: %s", executable_path)
@@ -828,7 +874,7 @@ Solve the captcha in the browser window, then press ENTER to retry.")
         # Check if persistent profile exists (preferred method)
         if self.user_data_dir.exists():
             logger.info(f"Using persistent profile: {self.user_data_dir}")
-            self.context = self.playwright.chromium.launch_persistent_context(
+            launch_kwargs = dict(
                 user_data_dir=str(self.user_data_dir),
                 headless=self.config.is_headless(),
                 viewport={"width": 1920, "height": 1080},
@@ -840,35 +886,63 @@ Solve the captcha in the browser window, then press ENTER to retry.")
                 locale="en-US",
                 timezone_id="America/New_York",
             )
+            if proxy:
+                launch_kwargs["proxy"] = proxy
+            try:
+                self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)
+            except Exception as exc:
+                if proxy and _looks_like_proxy_failure(str(exc)):
+                    logger.error(
+                        "Proxy connection/auth failed for %s. Check credentials and connectivity.",
+                        proxy.get("server"),
+                    )
+                raise
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
             # Fallback to session file or new context
             logger.info("No persistent profile found, using regular context")
-            self.browser = self.playwright.chromium.launch(
+            launch_kwargs = dict(
                 headless=self.config.is_headless(),
                 args=stealth_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
             )
+            if proxy:
+                launch_kwargs["proxy"] = proxy
+            try:
+                self.browser = self.playwright.chromium.launch(**launch_kwargs)
+            except Exception as exc:
+                if proxy and _looks_like_proxy_failure(str(exc)):
+                    logger.error(
+                        "Proxy connection/auth failed for %s. Check credentials and connectivity.",
+                        proxy.get("server"),
+                    )
+                raise
 
             if self.session_file.exists():
                 logger.info(f"Loading session from {self.session_file}")
-                self.context = self.browser.new_context(
+                context_kwargs = dict(
                     storage_state=str(self.session_file),
                     viewport={"width": 1920, "height": 1080},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                     locale="en-US",
                     timezone_id="America/New_York",
                 )
+                if proxy:
+                    context_kwargs["proxy"] = proxy
+                self.context = self.browser.new_context(**context_kwargs)
             else:
                 logger.warning("No session found - run setup_session.py first!")
-                self.context = self.browser.new_context(
+                context_kwargs = dict(
                     viewport={"width": 1920, "height": 1080},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                     locale="en-US",
                     timezone_id="America/New_York",
                 )
+                if proxy:
+                    context_kwargs["proxy"] = proxy
+                self.context = self.browser.new_context(**context_kwargs)
 
             self.page = self.context.new_page()
 

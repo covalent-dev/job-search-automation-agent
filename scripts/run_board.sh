@@ -24,6 +24,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="$REPO_ROOT/shared:$REPO_ROOT/$BOARD_DIR/src:$PYTHONPATH"
 export JOB_BOT_BOARD="$BOARD"
 
+# Load repo-level .env if present (gitignored secrets; optional)
+if [ -f "$REPO_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$REPO_ROOT/.env"
+    set +a
+fi
+
 # Set working directory to board dir (for relative config paths)
 cd "$REPO_ROOT/$BOARD_DIR"
 

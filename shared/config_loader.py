@@ -5,8 +5,9 @@ Reads and validates settings.yaml
 """
 
 import yaml
+import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
@@ -170,6 +171,53 @@ class ConfigLoader:
     def use_stealth(self) -> bool:
         """Check if Playwright stealth should be enabled"""
         return self.get('browser.use_stealth', False)
+
+    # === Proxy Config ===
+
+    def is_proxy_enabled(self) -> bool:
+        """Check if Playwright proxy should be enabled (disabled by default)."""
+        return bool(self.get("browser.proxy.enabled", False))
+
+    def _get_proxy_server_raw(self) -> str:
+        server = (self.get("browser.proxy.server", "") or "").strip()
+        if server:
+            return server
+
+        host = (self.get("browser.proxy.host", "") or os.getenv("PROXY_HOST") or "").strip()
+        port = str(self.get("browser.proxy.port", "") or os.getenv("PROXY_PORT") or "").strip()
+        if host and port:
+            return f"{host}:{port}"
+        return ""
+
+    def get_playwright_proxy(self) -> Optional[Dict[str, str]]:
+        """
+        Return a Playwright-ready proxy dict or None.
+
+        Values may fall back to env vars (PROXY_HOST/PORT/USER/PASS), but the
+        enabled flag must come from config (browser.proxy.enabled).
+        """
+        if not self.is_proxy_enabled():
+            return None
+
+        server_raw = self._get_proxy_server_raw()
+        if not server_raw:
+            raise ValueError(
+                "Proxy is enabled but no server is configured. "
+                "Set browser.proxy.server or browser.proxy.host+browser.proxy.port "
+                "(or env PROXY_HOST+PROXY_PORT)."
+            )
+
+        server = server_raw if "://" in server_raw else f"http://{server_raw}"
+        proxy: Dict[str, str] = {"server": server}
+
+        username = (self.get("browser.proxy.username", "") or os.getenv("PROXY_USER") or "").strip()
+        password = (self.get("browser.proxy.password", "") or os.getenv("PROXY_PASS") or "").strip()
+        if username:
+            proxy["username"] = username
+        if password:
+            proxy["password"] = password
+
+        return proxy
     
     # === AI Config ===
     
