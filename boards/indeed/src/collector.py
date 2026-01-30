@@ -1353,76 +1353,36 @@ class JobCollector:
                         continue
 
                 if not job_cards:
-
+                    # Check if page is blocked by captcha
                     captcha_detection = self._is_captcha_page(self.page)
-
                     if captcha_detection:
-
                         artifacts = self._save_search_debug_artifacts(self.page, label="captcha")
-
                         logger.warning(
-
                             "Search page blocked by captcha after selector failures (reason=%s, title=%s, url=%s, artifacts=%s)",
-
                             captcha_detection["reason"],
-
                             captcha_detection["title"],
-
                             captcha_detection["url"],
-
                             artifacts,
-
                         )
-
                         action = self._handle_search_captcha(self.page, url)
-
                         logger.warning(
-
                             "Search captcha action=%s (query=%s, page=%s, url=%s)",
-
-                            action,
-
-                            query,
-
-                            page_index + 1,
-
-                            url,
-
+                            action, query, page_index + 1, url,
                         )
-
                         if action == "abort":
-
                             raise CaptchaAbort("User requested abort after captcha")
-
                         if action == "skip":
-
                             break
-
                         if action in ("retry", "solved"):
-
                             continue
 
-
+                    # No captcha but selectors failed - save debug artifacts
                     artifacts = self._save_search_debug_artifacts(self.page, label="no_job_cards")
-
                     logger.warning(
-
                         "No job cards found with any selector (query=%s, page=%s, url=%s, artifacts=%s, selectors=%s)",
-
-                        query,
-
-                        page_index + 1,
-
-                        url,
-
-                        artifacts,
-
-                        selectors,
-
+                        query, page_index + 1, url, artifacts, selectors,
                     )
-
                     print("   ⚠️  No job cards found - saved debug screenshot + HTML")
-
                     break
 
                 try:
