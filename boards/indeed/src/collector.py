@@ -72,6 +72,163 @@ class JobCollector:
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
         self._captcha_solver: Optional[TwoCaptchaSolver] = None
+        self._captcha_solver_init_attempted = False
+
+    def _get_captcha_solver(self) -> Optional[TwoCaptchaSolver]:
+        """Lazily initialize the captcha solver if enabled and API key is available."""
+        if self._captcha_solver is not None:
+            return self._captcha_solver
+        if self._captcha_solver_init_attempted:
+            return None
+        self._captcha_solver_init_attempted = True
+
+        if not self.config.is_captcha_auto_solve_enabled():
+            logger.debug("Captcha auto-solve is disabled")
+            return None
+
+        api_key = self.config.get_captcha_api_key()
+        if not api_key:
+            logger.warning("Captcha auto-solve enabled but no API key found in env")
+            return None
+
+        provider = self.config.get_captcha_provider()
+        if provider.lower() != "2captcha":
+            logger.warning("Unsupported captcha provider: %s (only 2captcha supported)", provider)
+            return None
+
+        try:
+            self._captcha_solver = TwoCaptchaSolver(api_key=api_key)
+            logger.info("Captcha solver initialized (provider=%s)", provider)
+        except Exception as exc:
+            logger.error("Failed to initialize captcha solver: %s", exc)
+            return None
+
+        return self._captcha_solver
+
+    def _extract_turnstile_sitekey(self, page: Page) -> Optional[str]:
+        """Extract Turnstile sitekey from page if present."""
+        selectors = [
+            ".cf-turnstile[data-sitekey]",
+            "[data-sitekey]",
+            "iframe[src*='challenges.cloudflare.com']",
+        ]
+        for selector in selectors:
+            elem = page.query_selector(selector)
+            if not elem:
+                continue
+            sitekey = elem.get_attribute("data-sitekey")
+            if sitekey:
+                return sitekey.strip()
+            if "iframe" in selector:
+                src = elem.get_attribute("src") or ""
+                import re
+                match = re.search(r"sitekey=([^&]+)", src)
+                if match:
+                    return match.group(1).strip()
+        return None
+
+    def _attempt_turnstile_solve(self, page: Page, url: str) -> bool:
+        """
+        Attempt to solve a Turnstile captcha on the page.
+        Returns True if solved and verified, False otherwise.
+        """
+        solver = self._get_captcha_solver()
+        if not solver:
+            return False
+
+        sitekey = self._extract_turnstile_sitekey(page)
+        if not sitekey:
+            logger.info("No Turnstile sitekey found; cannot auto-solve (static Cloudflare page?)")
+            return False
+
+        max_attempts = self.config.get_captcha_max_solve_attempts()
+        timeout = self.config.get_captcha_solve_timeout_seconds()
+        poll_interval = self.config.get_captcha_poll_interval_seconds()
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.info(
+                    "Attempting Turnstile solve (attempt %s/%s, sitekey=%s...)",
+                    attempt, max_attempts, sitekey[:12]
+                )
+                print(f"\n   🔐 Solving Turnstile captcha (attempt {attempt}/{max_attempts})...")
+
+                token = solver.solve_turnstile(
+                    sitekey=sitekey,
+                    page_url=url,
+                    timeout_seconds=timeout,
+                    poll_interval_seconds=poll_interval,
+                )
+
+                logger.info("Received Turnstile token (length=%s)", len(token))
+
+                # Inject token into page
+                inject_script = """
+                    (token) => {
+                        // Method 1: Set hidden input
+                        const inputs = document.querySelectorAll('input[name="cf-turnstile-response"], input[name="cf_turnstile_response"]');
+                        inputs.forEach(input => { input.value = token; });
+
+                        // Method 2: Set turnstile callback data
+                        const turnstileDiv = document.querySelector('.cf-turnstile');
+                        if (turnstileDiv) {
+                            turnstileDiv.setAttribute('data-response', token);
+                        }
+
+                        // Method 3: Call turnstile callback if available
+                        if (window.turnstile && window.turnstile.getResponse) {
+                            try {
+                                const widgetId = document.querySelector('.cf-turnstile')?.getAttribute('data-widget-id');
+                                if (widgetId) {
+                                    window.turnstile.reset(widgetId);
+                                }
+                            } catch (e) {}
+                        }
+
+                        // Method 4: Dispatch event
+                        const event = new CustomEvent('turnstile-callback', { detail: { token: token } });
+                        document.dispatchEvent(event);
+
+                        return true;
+                    }
+                """
+                page.evaluate(inject_script, token)
+                logger.debug("Injected Turnstile token into page")
+
+                # Try to submit the challenge form
+                form = page.query_selector("form#challenge-form, form[action*='challenge']")
+                if form:
+                    submit_btn = form.query_selector("input[type='submit'], button[type='submit']")
+                    if submit_btn:
+                        submit_btn.click()
+                        logger.debug("Clicked challenge form submit button")
+                    else:
+                        page.evaluate("(form) => form.submit()", form)
+                        logger.debug("Submitted challenge form via JS")
+
+                # Wait for navigation or page change
+                time.sleep(3)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
+
+                # Verify captcha is cleared
+                if not self._is_captcha_page(page):
+                    logger.info("Turnstile captcha solved successfully")
+                    print("   ✓ Captcha solved!")
+                    return True
+
+                logger.warning("Page still shows captcha after token injection (attempt %s)", attempt)
+
+            except CaptchaSolveError as exc:
+                logger.warning("Turnstile solve failed (attempt %s/%s): %s", attempt, max_attempts, exc)
+                print(f"   ✗ Solve failed: {exc}")
+            except Exception as exc:
+                logger.error("Unexpected error during Turnstile solve (attempt %s/%s): %s", attempt, max_attempts, exc)
+
+        logger.warning("All Turnstile solve attempts exhausted")
+        return False
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -189,8 +346,26 @@ class JobCollector:
         except Exception:
             logger.debug("Captcha notification failed", exc_info=True)
 
-    def _handle_captcha_prompt(self, url: str, *, fetch_kind: str) -> str:
+    def _handle_captcha_prompt(self, page: Page, url: str, *, fetch_kind: str) -> str:
+        """
+        Handle captcha detection during detail fetches.
+
+        Attempts auto-solve first if enabled and sitekey is present.
+        Falls back to policy (abort/skip/pause) if solve fails or isn't possible.
+
+        Returns: "solved", "retry", "skip", or "abort"
+        """
         self._log_captcha(url)
+
+        # Attempt auto-solve first
+        if self.config.is_captcha_auto_solve_enabled():
+            logger.info("Attempting captcha auto-solve for detail %s fetch", fetch_kind)
+            if self._attempt_turnstile_solve(page, url):
+                self.captcha_consecutive = 0
+                return "solved"
+            logger.info("Auto-solve failed or not possible; falling back to policy")
+
+        # Auto-solve not available or failed; apply policy
         self._notify_captcha()
 
         policy = (self.config.get_captcha_on_detect() or "skip").strip().lower()
@@ -229,7 +404,23 @@ class JobCollector:
         return "skip"
 
 
-    def _handle_search_captcha(self, url: str) -> str:
+    def _handle_search_captcha(self, page: Page, url: str) -> str:
+        """
+        Handle captcha detection during search navigation.
+
+        Attempts auto-solve first if enabled and sitekey is present.
+        Falls back to policy (abort/skip/pause) if solve fails or isn't possible.
+
+        Returns: "solved", "retry", "skip", or "abort"
+        """
+        # Attempt auto-solve first
+        if self.config.is_captcha_auto_solve_enabled():
+            logger.info("Attempting captcha auto-solve for search navigation")
+            if self._attempt_turnstile_solve(page, url):
+                return "solved"
+            logger.info("Auto-solve failed or not possible; falling back to policy")
+
+        # Auto-solve not available or failed; apply policy
         self._notify_captcha()
 
         policy = (self.config.get_captcha_on_detect() or "skip").strip().lower()
@@ -608,14 +799,17 @@ class JobCollector:
                             self.captcha_debug_saved = True
                         except Exception:
                             pass
-                    action = self._handle_captcha_prompt(url)
+                    action = self._handle_captcha_prompt(detail_page, url, fetch_kind="salary")
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
                         return None, None
-                    if action == "retry":
-                        self.detail_salary_page = None
-                        attempt = max(attempt - 1, 0)
+                    if action in ("retry", "solved"):
+                        # solved = captcha cleared, continue extraction on same page
+                        # retry = user manually solved, re-navigate
+                        if action == "retry":
+                            self.detail_salary_page = None
+                            attempt = max(attempt - 1, 0)
                         continue
                 else:
                     self.captcha_consecutive = 0
@@ -724,14 +918,15 @@ class JobCollector:
                         captcha_detection["url"],
                     )
                     self._captcha_backoff()
-                    action = self._handle_captcha_prompt(url)
+                    action = self._handle_captcha_prompt(detail_page, url, fetch_kind="description")
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
                         return None
-                    if action == "retry":
-                        self.detail_description_page = None
-                        attempt = max(attempt - 1, 0)
+                    if action in ("retry", "solved"):
+                        if action == "retry":
+                            self.detail_description_page = None
+                            attempt = max(attempt - 1, 0)
                         continue
                 else:
                     self.captcha_consecutive = 0
@@ -1091,7 +1286,7 @@ class JobCollector:
                         captcha_detection["url"],
                         artifacts,
                     )
-                    action = self._handle_search_captcha(url)
+                    action = self._handle_search_captcha(self.page, url)
                     logger.warning(
                         "Search captcha action=%s (query=%s, page=%s, url=%s)",
                         action,
@@ -1103,8 +1298,12 @@ class JobCollector:
                         raise CaptchaAbort("User requested abort after captcha")
                     if action == "skip":
                         break
-                    if action == "retry":
-                        continue
+                    if action in ("retry", "solved"):
+                        # solved = captcha auto-cleared, proceed to extraction
+                        # retry = user manually solved, continue loop to re-check
+                        if action == "retry":
+                            continue
+                        # For solved, fall through to extraction
 
                 # Simulate human behavior before interacting with page
                 self._simulate_human_behavior()
@@ -1152,7 +1351,7 @@ class JobCollector:
 
                         )
 
-                        action = self._handle_search_captcha(url)
+                        action = self._handle_search_captcha(self.page, url)
 
                         logger.warning(
 
@@ -1176,7 +1375,7 @@ class JobCollector:
 
                             break
 
-                        if action == "retry":
+                        if action in ("retry", "solved"):
 
                             continue
 
