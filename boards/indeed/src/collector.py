@@ -869,13 +869,21 @@ class JobCollector:
                 if not salary and not self.detail_debug_saved:
                     try:
                         Path("output").mkdir(parents=True, exist_ok=True)
-                        detail_page.screenshot(path="output/detail_debug.png")
-                        Path("output/detail_debug.html").write_text(
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        png_path = f"output/detail_debug_{timestamp}.png"
+                        html_path = f"output/detail_debug_{timestamp}.html"
+                        detail_page.screenshot(path=png_path)
+                        Path(html_path).write_text(
                             detail_page.content(), encoding="utf-8"
+                        )
+                        logger.warning(
+                            "No salary found on detail page (selector drift likely); "
+                            "saved debug artifacts: %s, %s",
+                            png_path, html_path,
                         )
                         self.detail_debug_saved = True
                     except Exception:
-                        pass
+                        logger.debug("Failed to save detail debug artifacts", exc_info=True)
 
                 if salary or job_type:
                     break
@@ -963,13 +971,21 @@ class JobCollector:
                 if not description and not self.detail_description_debug_saved:
                     try:
                         Path("output").mkdir(parents=True, exist_ok=True)
-                        detail_page.screenshot(path="output/detail_description_debug.png")
-                        Path("output/detail_description_debug.html").write_text(
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        png_path = f"output/detail_description_debug_{timestamp}.png"
+                        html_path = f"output/detail_description_debug_{timestamp}.html"
+                        detail_page.screenshot(path=png_path)
+                        Path(html_path).write_text(
                             detail_page.content(), encoding="utf-8"
+                        )
+                        logger.warning(
+                            "No description found on detail page (selector drift likely); "
+                            "saved debug artifacts: %s, %s",
+                            png_path, html_path,
                         )
                         self.detail_description_debug_saved = True
                     except Exception:
-                        pass
+                        logger.debug("Failed to save detail description debug artifacts", exc_info=True)
 
                 if description:
                     break
