@@ -15,6 +15,16 @@ PROFILE_ROOT = Path.home() / ".job-search-automation"
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{BOARD_NAME}-profile"
 SESSION_FILE = "config/session.json"
 
+# Board-specific starting URLs for session setup
+BOARD_START_URLS = {
+    "indeed": "https://www.indeed.com/jobs?q=python+developer&l=Remote",
+    "linkedin": "https://www.linkedin.com/jobs/search/?keywords=python+developer&location=Remote",
+    "glassdoor": "https://www.glassdoor.com/Job/remote-python-developer-jobs-SRCH_IL.0,6_IS11047_KO7,23.htm",
+    "remotejobs": "https://remote.co/remote-jobs/developer/",
+    "remoteafrica": "https://remoteafrica.io/jobs",
+    "default": "https://www.indeed.com/jobs?q=python+developer&l=Remote",
+}
+
 
 def setup_session():
     """Open browser with persistent profile for manual captcha solving"""
@@ -61,9 +71,11 @@ def setup_session():
 
         page = context.pages[0] if context.pages else context.new_page()
 
-        # Navigate to Indeed
-        print("🌐 Opening Indeed...")
-        page.goto("https://www.indeed.com/jobs?q=python+developer&l=Remote")
+        # Navigate to the appropriate board
+        start_url = BOARD_START_URLS.get(BOARD_NAME, BOARD_START_URLS["default"])
+        board_display = BOARD_NAME if BOARD_NAME != "default" else "Indeed"
+        print(f"🌐 Opening {board_display}...")
+        page.goto(start_url)
 
         # Wait for user
         input("\n✋ Solve the captcha (if shown), wait for results to load, then press Enter...")
