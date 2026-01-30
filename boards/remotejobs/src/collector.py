@@ -10,6 +10,7 @@ import random
 import time
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,9 @@ REPO_NAME = REPO_ROOT.name
 PROFILE_ROOT = Path.home() / ".job-search-automation"
 # Match the profile naming used by setup_session.py
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
+
+DEFAULT_BLOCKED_FAIL_FAST_SECONDS = 25
+DEFAULT_JOB_CARDS_WAIT_BUDGET_SECONDS = 12
 
 
 class CaptchaAbort(Exception):
@@ -83,6 +87,89 @@ class JobCollector:
         max_delay = self.config.get_max_delay()
         delay = random.uniform(min_delay, max_delay)
         time.sleep(delay)
+
+    def _blocked_fail_fast_seconds(self) -> int:
+        value = None
+        try:
+            value = self.config.get("browser.blocked_fail_fast_seconds", None)
+        except Exception:
+            value = None
+        if value is None:
+            return DEFAULT_BLOCKED_FAIL_FAST_SECONDS
+        try:
+            return max(int(value), 5)
+        except Exception:
+            return DEFAULT_BLOCKED_FAIL_FAST_SECONDS
+
+    def _job_cards_wait_budget_seconds(self) -> int:
+        value = None
+        try:
+            value = self.config.get("browser.job_cards_wait_budget_seconds", None)
+        except Exception:
+            value = None
+        if value is None:
+            return DEFAULT_JOB_CARDS_WAIT_BUDGET_SECONDS
+        try:
+            return max(int(value), 3)
+        except Exception:
+            return DEFAULT_JOB_CARDS_WAIT_BUDGET_SECONDS
+
+    def _save_debug_artifacts(self, prefix: str = "debug") -> None:
+        try:
+            Path("output").mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+        try:
+            self.page.screenshot(path=f"output/{prefix}_screenshot.png")
+        except Exception:
+            pass
+        try:
+            Path(f"output/{prefix}_page.html").write_text(self.page.content(), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _record_block_event(self, details: dict, stage: str, target_url: str) -> None:
+        try:
+            Path("output").mkdir(parents=True, exist_ok=True)
+            payload = {
+                "timestamp": datetime.now().isoformat(),
+                "stage": stage,
+                "target_url": target_url,
+                "page_url": (self.page.url if self.page else None),
+                "details": details,
+            }
+            Path("output/block_event.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:
+            logger.debug("Block event write failed", exc_info=True)
+
+    def _fail_fast_if_blocked(self, stage: str, target_url: str) -> bool:
+        if not self.page:
+            return False
+        detection = self._is_captcha_page(self.page)
+        if not detection:
+            return False
+
+        self._save_debug_artifacts(prefix="debug")
+        self._record_block_event(detection, stage=stage, target_url=target_url)
+
+        reason = detection.get("reason")
+        title = detection.get("title")
+        url = detection.get("url")
+        logger.error(
+            "Blocked by captcha/Cloudflare (stage=%s, reason=%s, title=%s, url=%s, target=%s)",
+            stage,
+            reason,
+            title,
+            url,
+            target_url,
+        )
+        print("\n   ✗ Blocked by Cloudflare/captcha challenge.")
+        print(f"     Reason: {reason}")
+        print("     Saved:  output/debug_screenshot.png, output/debug_page.html, output/block_event.json")
+        print("     Remediation:")
+        print("       - Run: JOB_BOT_BOARD=remotejobs python3 shared/setup_session.py (solve once, persistent profile)")
+        print("       - Optional: set browser.use_stealth: true and/or enable a Playwright proxy")
+        return True
 
     def _handle_remotejobs_error_page(self) -> bool:
         if self.current_board != "remotejobs":
@@ -794,6 +881,10 @@ class JobCollector:
                             self.captcha_debug_saved = True
                         except Exception:
                             pass
+                    if self.config.is_headless() or not sys.stdin.isatty():
+                        logger.warning("Non-interactive run; skipping remaining detail fetches after captcha")
+                        self.skip_detail_fetches = True
+                        return DetailPageData()
                     action = self._handle_captcha_prompt(url)
                     if action == "abort":
                         raise CaptchaAbort("User requested abort after captcha")
@@ -921,7 +1012,10 @@ class JobCollector:
         """Navigate with retry for flaky pages."""
         for attempt in range(1, self.max_retries + 1):
             try:
-                self.page.goto(url, wait_until="domcontentloaded")
+                timeout_ms = self.config.get_navigation_timeout()
+                if (self.current_board or "").lower() == "remotejobs":
+                    timeout_ms = min(timeout_ms, self._blocked_fail_fast_seconds() * 1000)
+                self.page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 return True
             except Exception as exc:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
@@ -986,48 +1080,139 @@ class JobCollector:
         channel = self.config.get_browser_channel() or None
         executable_path = self.config.get_browser_executable_path() or None
         launch_timeout = self.config.get_launch_timeout()
+        proxy = None
+
+        def _looks_like_proxy_failure(message: str) -> bool:
+            msg = (message or "").lower()
+            markers = (
+                "err_proxy_connection_failed",
+                "err_tunnel_connection_failed",
+                "proxy authentication",
+                "authentication required",
+                "proxy",
+                "407",
+            )
+            return any(marker in msg for marker in markers)
+
+        try:
+            proxy = self.config.get_playwright_proxy()
+        except Exception as exc:
+            logger.error("Proxy configuration error: %s", exc)
+            raise
+
+        if proxy:
+            logger.info("Proxy enabled: %s", proxy.get("server"))
 
         if executable_path and not Path(executable_path).exists():
             logger.warning("Browser executable not found: %s", executable_path)
             executable_path = None
 
+        stealth_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=IsolateOrigins,site-per-process",
+            "--disable-site-isolation-trials",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--disable-gpu",
+            "--window-size=1920,1080",
+            "--start-maximized",
+            "--disable-infobars",
+            "--disable-extensions",
+            "--disable-plugins-discovery",
+            "--disable-background-networking",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-breakpad",
+            "--disable-component-extensions-with-background-pages",
+            "--disable-default-apps",
+            "--disable-features=TranslateUI",
+            "--disable-hang-monitor",
+            "--disable-ipc-flooding-protection",
+            "--disable-popup-blocking",
+            "--disable-prompt-on-repost",
+            "--disable-renderer-backgrounding",
+            "--disable-sync",
+            "--force-color-profile=srgb",
+            "--metrics-recording-only",
+            "--no-first-run",
+            "--password-store=basic",
+            "--use-mock-keychain",
+        ]
+
         # Check if persistent profile exists (preferred method)
         if self.user_data_dir.exists():
             logger.info(f"Using persistent profile: {self.user_data_dir}")
-            self.context = self.playwright.chromium.launch_persistent_context(
+            launch_kwargs = dict(
                 user_data_dir=str(self.user_data_dir),
                 headless=self.config.is_headless(),
-                viewport={"width": 1280, "height": 800},
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                ],
+                viewport={"width": 1920, "height": 1080},
+                args=stealth_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                locale="en-US",
+                timezone_id="America/New_York",
             )
+            if proxy:
+                launch_kwargs["proxy"] = proxy
+            try:
+                self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)
+            except Exception as exc:
+                if proxy and _looks_like_proxy_failure(str(exc)):
+                    logger.error(
+                        "Proxy connection/auth failed for %s. Check credentials and connectivity.",
+                        proxy.get("server"),
+                    )
+                raise
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
             # Fallback to session file or new context
             logger.info("No persistent profile found, using regular context")
-            self.browser = self.playwright.chromium.launch(
+            launch_kwargs = dict(
                 headless=self.config.is_headless(),
+                args=stealth_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
             )
+            if proxy:
+                launch_kwargs["proxy"] = proxy
+            try:
+                self.browser = self.playwright.chromium.launch(**launch_kwargs)
+            except Exception as exc:
+                if proxy and _looks_like_proxy_failure(str(exc)):
+                    logger.error(
+                        "Proxy connection/auth failed for %s. Check credentials and connectivity.",
+                        proxy.get("server"),
+                    )
+                raise
 
             if self.session_file.exists():
                 logger.info(f"Loading session from {self.session_file}")
-                self.context = self.browser.new_context(
+                context_kwargs = dict(
                     storage_state=str(self.session_file),
-                    viewport={"width": 1280, "height": 800},
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    locale="en-US",
+                    timezone_id="America/New_York",
                 )
+                if proxy:
+                    context_kwargs["proxy"] = proxy
+                self.context = self.browser.new_context(**context_kwargs)
             else:
                 logger.warning("No session found - run setup_session.py first!")
-                self.context = self.browser.new_context(
-                    viewport={"width": 1280, "height": 800},
+                context_kwargs = dict(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    locale="en-US",
+                    timezone_id="America/New_York",
                 )
+                if proxy:
+                    context_kwargs["proxy"] = proxy
+                self.context = self.browser.new_context(**context_kwargs)
 
             self.page = self.context.new_page()
 
@@ -1074,6 +1259,9 @@ class JobCollector:
         logger.info("Browser closed")
 
     def _get_job_cards(self, job_board: str) -> list:
+        if job_board == "remotejobs":
+            if self._is_captcha_page(self.page):
+                return []
         selectors = []
         if job_board == "remotejobs":
             selectors = [
@@ -1141,9 +1329,14 @@ class JobCollector:
             ]
 
         job_cards = []
+        budget_seconds = self._job_cards_wait_budget_seconds() if job_board == "remotejobs" else 25
+        budget_deadline = time.monotonic() + budget_seconds
         for selector in selectors:
+            remaining_ms = int(max(0.0, budget_deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                break
             try:
-                self.page.wait_for_selector(selector, timeout=5000)
+                self.page.wait_for_selector(selector, timeout=min(1000, remaining_ms))
                 job_cards = self.page.query_selector_all(selector)
                 if job_cards:
                     logger.info("Found jobs using selector: %s", selector)
@@ -1196,17 +1389,14 @@ class JobCollector:
                 if self._handle_remotejobs_error_page():
                     self._random_delay()
 
+                if self._fail_fast_if_blocked(stage="search-results", target_url=url):
+                    break
+
                 job_cards = self._get_job_cards(self.current_board)
 
                 if not job_cards:
                     # Debug: save screenshot and HTML
-                    self.page.screenshot(path="output/debug_screenshot.png")
-                    try:
-                        Path("output/debug_page.html").write_text(
-                            self.page.content(), encoding="utf-8"
-                        )
-                    except Exception:
-                        pass
+                    self._save_debug_artifacts(prefix="debug")
                     logger.warning("No job cards found with any selector")
                     print("   ⚠️  No job cards found - saved debug screenshot")
                     break

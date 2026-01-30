@@ -1,104 +1,33 @@
-# Job Search Automation
+# RemoteJobs Board
 
-Automated job search and aggregation using Playwright. Testing phase
+RemoteJobs collector for `remotejobs.io` using Playwright.
 
-## Status: v0.0 (Testing)
+## Run
 
-Currently testing browser automation fundamentals. Session management works, locator strategies identified.
+From repo root:
 
-## What's Working (v0.0)
-
-**Session Management:**
-- Saves login cookies to JSON
-- No re-login needed across runs
-
-**Locator Testing Results:**
-- `get_by_role`: 1 exact match (most reliable)
-- `get_by_text`: 4 matches (good fallback)
-- CSS selectors: 3 matches (works)
-- XPath: functional but fragile
-- Class names: breaks on UI updates (avoid)
-
-**Key Learnings:**
-- `get_by_role` is production-ready
-- `wait_until="domcontentloaded"` for React apps
-- Never use `time.sleep()` with Playwright
-
-**De-duplication:**
-- Cross-run dedupe via hash log
-- Within-run dedupe uses job links
-
-## Tech Stack
-
-- Python 3.x
-- Playwright (browser automation)
-- Ollama + DeepSeek (AI filtering, coming v0.2)
-
-## Setup
 ```bash
-git clone https://github.com/covalent-dev/job-search-automation.git
-cd job-search-automation
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-playwright install chromium
-
-# First time: Setup session (solve captcha once)
-python src/setup_session.py --config config/settings.yaml
-
-# Run the bot (RemoteJobs default)
-python src/main.py
+./scripts/run_board.sh remotejobs config/settings.yaml
+./scripts/run_board.sh remotejobs config/settings.headless.yaml
+./scripts/run_board.sh remotejobs config/settings.smoke.yaml
 ```
 
-## Session Management
+## Cloudflare / Captcha
 
-Job sites use Cloudflare protection. Run `setup_session.py` first to:
-1. Open a browser window
-2. Solve the captcha manually
-3. Save the session cookies
+RemoteJobs is frequently protected by Cloudflare. When blocked, the collector fails fast and saves artifacts:
+- `output/debug_screenshot.png`
+- `output/debug_page.html`
+- `output/block_event.json`
 
-After setup, `main.py` reuses the saved session to bypass captcha.
-Note: Playwright may open an extra `about:blank` tab for automation control. Leave it open during runs.
+### Recommended remediation (persistent profile)
 
-## Structure
-```
-job-search-automation/
-├── config/
-│   ├── settings.yaml
-│   └── session.json      # Saved after setup (gitignored)
-├── src/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── setup_session.py  # Run once to save session
-│   ├── collector.py
-│   ├── output_writer.py
-│   ├── models.py
-│   └── config_loader.py
-├── output/
-├── logs/
-├── requirements.txt
-└── README.md
+From repo root:
+
+```bash
+JOB_BOT_BOARD=remotejobs python3 shared/setup_session.py
 ```
 
-## Configuration
+Solve the challenge in the opened browser once; the profile is saved under:
+`~/.job-search-automation/job-search-automation-remotejobs-profile`
 
-Edit `config/settings.yaml` to customize:
-- Search keywords and location
-- Output file paths
-- Browser behavior (headless mode, delays)
-- AI scoring options (Ollama)
-- Cross-run de-duplication log
-
-Default config targets RemoteJobs. Use `config/settings.headless.yaml` for headless runs.
-
-Each run writes:
-- JSON + Markdown output
-- `run_summary_*.json` (per-run stats and QA checks)
-- `config_snapshot_*.yaml` (config snapshot)
-
-Headless runs (optional):
-- `python src/main.py --config config/settings.headless.yaml`
+Then rerun headless collection.

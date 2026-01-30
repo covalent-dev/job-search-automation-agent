@@ -2,14 +2,22 @@
 
 ## Setup
 
-1. Install deps and Playwright.
-2. Run `python src/setup_session.py --config config/settings.yaml`.
-3. Solve any captcha and wait for results to load.
+1. Install deps and Playwright browsers.
+2. If Cloudflare blocks collection, run a one-time persistent-profile setup:
+
+   ```bash
+   JOB_BOT_BOARD=remotejobs python3 shared/setup_session.py
+   ```
+
+   Then solve the challenge and wait for job listings to load.
 
 ## Run
 
-- Default (RemoteJobs): `python src/main.py`
-- Headless: `python src/main.py --config config/settings.headless.yaml`
+From repo root:
+
+- Default: `./scripts/run_board.sh remotejobs config/settings.yaml`
+- Headless: `./scripts/run_board.sh remotejobs config/settings.headless.yaml`
+- Smoke (fast validation): `./scripts/run_board.sh remotejobs config/settings.smoke.yaml`
 
 ## Expected Outputs
 
@@ -19,6 +27,5 @@
 
 ## Recovery
 
-- If no jobs collected: adjust search URL or selectors in `src/collector.py`.
-- If salary missing: enable `detail_salary_fetch` and reduce `detail_salary_max_per_query`.
-- If blocked: slow down delays and avoid headless.
+- If blocked: check `output/debug_page.html` for Cloudflare challenge and re-run session setup.
+- If selectors break: update `boards/remotejobs/src/collector.py`.

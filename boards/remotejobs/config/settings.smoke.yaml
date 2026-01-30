@@ -1,0 +1,35 @@
+search:
+  keywords:
+  - AI engineer
+  location: Remote
+  max_results_per_search: 5
+  max_pages: 1
+  detail_salary_fetch: false
+  detail_company_fetch: false
+  detail_description_fetch: false
+  job_boards:
+  - remotejobs
+output:
+  json_file: output/jobs_smoke_{timestamp}.json
+  markdown_file: output/jobs_smoke_{timestamp}.md
+  summary_file: output/run_summary_smoke_{timestamp}.json
+  config_snapshot_file: output/config_snapshot_smoke_{timestamp}.yaml
+  use_timestamp: true
+browser:
+  headless: true
+  min_delay: 0.5
+  max_delay: 1.5
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  use_stealth: true
+  blocked_fail_fast_seconds: 25
+  job_cards_wait_budget_seconds: 12
+ai_filter:
+  enabled: false
+dedupe:
+  enabled: false
+logging:
+  level: INFO
+  log_file: logs/job_bot_smoke_{timestamp}.log

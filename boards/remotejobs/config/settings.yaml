@@ -42,7 +42,9 @@ browser:
   max_retries: 2
   channel: ''
   executable_path: ''
-  use_stealth: false
+  use_stealth: true
+  blocked_fail_fast_seconds: 25
+  job_cards_wait_budget_seconds: 12
 ai_filter:
   enabled: true
   model: deepseek-coder-v2:latest

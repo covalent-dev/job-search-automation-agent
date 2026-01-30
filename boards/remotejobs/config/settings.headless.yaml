@@ -16,6 +16,8 @@ search:
   max_results_per_search: 50
   max_pages: 2
   detail_salary_fetch: false
+  detail_company_fetch: false
+  detail_description_fetch: false
   detail_salary_timeout: 8
   detail_salary_retries: 1
   detail_salary_max_per_query: 10
@@ -42,7 +44,9 @@ browser:
   max_retries: 2
   channel: ''
   executable_path: ''
-  use_stealth: false
+  use_stealth: true
+  blocked_fail_fast_seconds: 25
+  job_cards_wait_budget_seconds: 12
 ai_filter:
   enabled: false
   model: deepseek-coder-v2:latest

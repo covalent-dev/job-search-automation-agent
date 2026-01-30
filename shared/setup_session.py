@@ -45,7 +45,8 @@ BOARD_START_URLS = {
     "indeed": "https://www.indeed.com/jobs?q=python+developer&l=Remote",
     "linkedin": "https://www.linkedin.com/jobs/search/?keywords=python+developer&location=Remote",
     "glassdoor": "https://www.glassdoor.com/Job/remote-python-developer-jobs-SRCH_IL.0,6_IS11047_KO7,23.htm",
-    "remotejobs": "https://remote.co/remote-jobs/developer/",
+    # NOTE: "remotejobs" board targets remotejobs.io (not remote.co).
+    "remotejobs": "https://www.remotejobs.io/remote-jobs?search=python+developer&location=Remote",
     "remoteafrica": "https://remoteafrica.io/jobs",
     "default": "https://www.indeed.com/jobs?q=python+developer&l=Remote",
 }
