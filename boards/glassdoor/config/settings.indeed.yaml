@@ -54,6 +54,14 @@ output:
     enabled: true
     vault_path: "/Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/glassdoor"
 
+# Proxy (IPRoyal / Cloudflare bypass)
+proxy:
+  enabled: false
+  host: ""
+  port: 0
+  user: ""
+  pass: ""
+
 # Browser behavior
 browser:
   # Headless mode (true = invisible browser, false = see what's happening)

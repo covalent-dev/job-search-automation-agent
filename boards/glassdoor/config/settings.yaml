@@ -1,3 +1,6 @@
+# Glassdoor config profile: default (balanced)
+# Use for regular runs with reasonable pacing + full data extraction.
+# Usage: ./scripts/run_board.sh glassdoor config/settings.yaml
 search:
   keywords:
   - AI engineer
@@ -38,6 +41,12 @@ output:
   vault_sync:
     enabled: true
     vault_path: /Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/glassdoor
+proxy:
+  enabled: true
+  host: ''
+  port: 0
+  user: ''
+  pass: ''
 browser:
   headless: true
   min_delay: 1.0
@@ -133,7 +142,7 @@ post_run:
   min_ai_score: 0
   top_n: 0
 dedupe:
-  enabled: false
+  enabled: true
   hash_file: output/dedupe_hashes.jsonl
 logging:
   level: INFO

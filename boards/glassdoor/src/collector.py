@@ -15,16 +15,20 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
+from dotenv import load_dotenv
 from models import Job, SearchQuery
 
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_NAME = REPO_ROOT.name
 PROFILE_ROOT = Path.home() / ".job-search-automation"
 # Match the profile naming used by setup_session.py
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
+
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
 
 
 class CaptchaAbort(Exception):
@@ -189,6 +193,44 @@ class JobCollector:
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
+        self._selected_proxy_server: Optional[str] = None
+
+    def _get_proxy_candidates(self) -> list[dict]:
+        proxy_enabled = bool(self.config.get("proxy.enabled", False))
+        if not proxy_enabled:
+            return []
+
+        host_raw = (self.config.get("proxy.host", "") or "").strip() or (os.getenv("PROXY_HOST") or "").strip()
+        port_raw = self.config.get("proxy.port", 0) or os.getenv("PROXY_PORT") or ""
+        user = (self.config.get("proxy.user", "") or "").strip() or (os.getenv("PROXY_USER") or "").strip()
+        password = (self.config.get("proxy.pass", "") or "").strip() or (os.getenv("PROXY_PASS") or "").strip()
+
+        try:
+            port = int(str(port_raw).strip()) if str(port_raw).strip() else 0
+        except Exception:
+            port = 0
+
+        if not host_raw or not port or not user or not password:
+            logger.warning(
+                "Proxy enabled but misconfigured (need host/port/user/pass via settings.yaml or env). Continuing without proxy."
+            )
+            return []
+
+        hosts = [h.strip() for h in host_raw.split(",") if h.strip()]
+        candidates: list[dict] = []
+        for host in hosts:
+            if "://" in host:
+                parsed = urlparse(host)
+                scheme = parsed.scheme or "http"
+                netloc = parsed.netloc or parsed.path
+                if ":" not in netloc:
+                    netloc = f"{netloc}:{port}"
+                server = f"{scheme}://{netloc}"
+            else:
+                netloc = host if ":" in host else f"{host}:{port}"
+                server = f"http://{netloc}"
+            candidates.append({"server": server, "username": user, "password": password})
+        return candidates
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -1058,8 +1100,6 @@ class JobCollector:
 
     def start_browser(self) -> None:
         """Initialize Playwright browser with persistent profile and stealth"""
-        logger.info("Starting browser with stealth mode...")
-        self.playwright = sync_playwright().start()
         channel = self.config.get_browser_channel() or None
         executable_path = self.config.get_browser_executable_path() or None
         launch_timeout = self.config.get_launch_timeout()
@@ -1081,39 +1121,79 @@ class JobCollector:
             "timezone_id": "America/New_York",
         }
 
-        if self.user_data_dir.exists():
-            logger.info(f"Using persistent profile: {self.user_data_dir}")
-            self.context = self.playwright.chromium.launch_persistent_context(
-                user_data_dir=str(self.user_data_dir),
-                headless=self.config.is_headless(),
-                args=browser_args,
-                channel=channel,
-                executable_path=executable_path,
-                timeout=launch_timeout,
-                **context_options,
-            )
-            self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+        proxy_candidates = self._get_proxy_candidates()
+        if proxy_candidates:
+            logger.info("Proxy enabled; %d endpoint(s) configured", len(proxy_candidates))
         else:
-            logger.info("No persistent profile found, using regular context")
-            self.browser = self.playwright.chromium.launch(
-                headless=self.config.is_headless(),
-                args=browser_args,
-                channel=channel,
-                executable_path=executable_path,
-                timeout=launch_timeout,
-            )
+            logger.info("Proxy disabled (or misconfigured); starting without proxy")
 
-            if self.session_file.exists():
-                logger.info(f"Loading session from {self.session_file}")
-                self.context = self.browser.new_context(
-                    storage_state=str(self.session_file),
-                    **context_options,
-                )
-            else:
-                logger.warning("No session found - run setup_session.py first!")
-                self.context = self.browser.new_context(**context_options)
+        attempts: list[Optional[dict]] = proxy_candidates if proxy_candidates else [None]
+        last_exc: Optional[Exception] = None
+        self._selected_proxy_server = None
 
-            self.page = self.context.new_page()
+        for proxy in attempts:
+            try:
+                self.playwright = sync_playwright().start()
+
+                if self.user_data_dir.exists():
+                    logger.info("Using persistent profile: %s", self.user_data_dir)
+                    launch_kwargs = {
+                        "user_data_dir": str(self.user_data_dir),
+                        "headless": self.config.is_headless(),
+                        "args": browser_args,
+                        "channel": channel,
+                        "executable_path": executable_path,
+                        "timeout": launch_timeout,
+                        **context_options,
+                    }
+                    if proxy:
+                        launch_kwargs["proxy"] = proxy
+                        self._selected_proxy_server = proxy.get("server")
+
+                    self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)
+                    self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+                else:
+                    logger.info("No persistent profile found, using regular context")
+                    self.browser = self.playwright.chromium.launch(
+                        headless=self.config.is_headless(),
+                        args=browser_args,
+                        channel=channel,
+                        executable_path=executable_path,
+                        timeout=launch_timeout,
+                    )
+
+                    new_context_kwargs = dict(context_options)
+                    if proxy:
+                        new_context_kwargs["proxy"] = proxy
+                        self._selected_proxy_server = proxy.get("server")
+
+                    if self.session_file.exists():
+                        logger.info("Loading session from %s", self.session_file)
+                        self.context = self.browser.new_context(
+                            storage_state=str(self.session_file),
+                            **new_context_kwargs,
+                        )
+                    else:
+                        logger.warning("No session found - run setup_session.py first!")
+                        self.context = self.browser.new_context(**new_context_kwargs)
+
+                    self.page = self.context.new_page()
+
+                break
+            except Exception as exc:
+                last_exc = exc
+                if proxy:
+                    logger.error("Browser start failed with proxy server=%s: %s", proxy.get("server"), exc)
+                else:
+                    logger.error("Browser start failed without proxy: %s", exc)
+                try:
+                    self.stop_browser()
+                except Exception:
+                    logger.debug("Failed to cleanup browser after startup error", exc_info=True)
+                self._selected_proxy_server = None
+
+        if not self.page or not self.context:
+            raise last_exc or RuntimeError("Failed to start browser")
 
         self.page.set_default_timeout(self.config.get_page_timeout())
         self.page.set_default_navigation_timeout(self.config.get_navigation_timeout())
@@ -1129,8 +1209,12 @@ class JobCollector:
             except Exception as exc:
                 logger.warning("Homepage warmup failed (continuing anyway): %s", exc)
 
-        logger.info("Browser started successfully with stealth=%s, headless=%s",
-                    use_stealth, self.config.is_headless())
+        logger.info(
+            "Browser started successfully with stealth=%s, headless=%s, proxy=%s",
+            use_stealth,
+            self.config.is_headless(),
+            bool(self._selected_proxy_server),
+        )
 
     def stop_browser(self) -> None:
         """Clean up browser resources"""
