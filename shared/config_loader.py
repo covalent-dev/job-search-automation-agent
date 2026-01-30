@@ -422,6 +422,16 @@ class ConfigLoader:
         path = self.get('output.vault_sync.vault_path', '')
         return Path(path) if path else None
 
+    # === Notification Config ===
+
+    def is_notifications_enabled(self) -> bool:
+        """Check if desktop notifications are enabled (default: True on macOS, False elsewhere)"""
+        import sys
+        explicit = self.get('notifications.enabled', None)
+        if explicit is not None:
+            return bool(explicit)
+        return sys.platform == "darwin"
+
     # === Logging Config ===
 
     def get_log_level(self) -> str:

@@ -135,6 +135,8 @@ post_run:
 dedupe:
   enabled: false
   hash_file: output/dedupe_hashes.jsonl
+notifications:
+  enabled: true
 logging:
   level: INFO
   log_file: logs/job_bot_{timestamp}.log
