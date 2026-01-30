@@ -54,6 +54,14 @@ browser:
     port: ''
     username: ''
     password: ''
+captcha:
+  enabled: false
+  provider: 2captcha
+  api_key_env: CAPTCHA_API_KEY
+  on_detect: skip
+  solve_timeout_seconds: 180
+  poll_interval_seconds: 5
+  max_solve_attempts: 1
 ai_filter:
   enabled: true
   model: deepseek-coder-v2:latest
