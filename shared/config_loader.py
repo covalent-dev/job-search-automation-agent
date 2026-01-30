@@ -172,6 +172,61 @@ class ConfigLoader:
         """Check if Playwright stealth should be enabled"""
         return self.get('browser.use_stealth', False)
 
+    # === Captcha Config ===
+
+    def is_captcha_auto_solve_enabled(self) -> bool:
+        """Check if captcha auto-solving should be attempted (disabled by default)."""
+        enabled = self.get("captcha.enabled", None)
+        if enabled is None:
+            enabled = self.get("captcha.auto_solve", False)
+        return bool(enabled)
+
+    def get_captcha_provider(self) -> str:
+        """Get captcha provider name (default env CAPTCHA_PROVIDER or '2captcha')."""
+        provider = (self.get("captcha.provider", "") or "").strip()
+        if provider:
+            return provider
+        env_provider = (os.getenv("CAPTCHA_PROVIDER") or "").strip()
+        return env_provider or "2captcha"
+
+    def get_captcha_api_key_env(self) -> str:
+        """Get env var name that contains the captcha API key."""
+        return (self.get("captcha.api_key_env", "") or "CAPTCHA_API_KEY").strip() or "CAPTCHA_API_KEY"
+
+    def get_captcha_api_key(self) -> str:
+        """Read captcha API key from env using captcha.api_key_env (never stored in config)."""
+        env_name = self.get_captcha_api_key_env()
+        return (os.getenv(env_name) or "").strip()
+
+    def get_captcha_on_detect(self) -> str:
+        """Get captcha policy action: abort | skip | pause."""
+        value = (self.get("captcha.on_detect", "") or "").strip().lower()
+        if not value:
+            return "skip"
+        if value not in ("abort", "skip", "pause"):
+            logger.warning("Invalid captcha.on_detect value %r; defaulting to 'skip'", value)
+            return "skip"
+        return value
+
+    def get_captcha_solve_timeout_seconds(self) -> int:
+        """Get captcha solve timeout in seconds."""
+        timeout = self.get("captcha.solve_timeout_seconds", None)
+        if timeout is None:
+            timeout = self.get("captcha.timeout", 180)
+        return int(timeout)
+
+    def get_captcha_max_solve_attempts(self) -> int:
+        """Get max auto-solve attempts per captcha event."""
+        attempts = self.get("captcha.max_solve_attempts", None)
+        if attempts is None:
+            attempts = self.get("captcha.max_retries", 1)
+        return max(int(attempts), 1)
+
+    def get_captcha_poll_interval_seconds(self) -> float:
+        """Get captcha provider polling interval in seconds."""
+        value = self.get("captcha.poll_interval_seconds", 5)
+        return max(float(value), 1.0)
+
     # === Proxy Config ===
 
     def is_proxy_enabled(self) -> bool:
