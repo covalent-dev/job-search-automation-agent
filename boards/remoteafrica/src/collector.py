@@ -26,6 +26,12 @@ PROFILE_ROOT = Path.home() / ".job-search-automation"
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
 REMOTEAFRICA_BASE_URL = "https://remote4africa.com/jobs"
 
+# Non-job slugs that appear under /jobs/ but aren't job listings
+REMOTEAFRICA_DENYLIST_SLUGS = frozenset({
+    "plans", "pricing", "about", "contact", "login", "signup",
+    "register", "faq", "help", "terms", "privacy", "categories",
+})
+
 
 class CaptchaAbort(Exception):
     """Raised when user opts to abort after captcha."""
@@ -64,6 +70,8 @@ class JobCollector:
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
+        self._skipped_links_logged = 0
+        self._skipped_links_max_log = 5
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -263,19 +271,8 @@ class JobCollector:
             except Exception:
                 continue
 
-        # Fallback: best-effort text extraction
-        title = self._extract_text(page.query_selector("h1")) or self._extract_text(page.query_selector("h2"))
-        if not title:
-            return None
-        return Job(
-            title=title.strip(),
-            company="Unknown Company",
-            location="Remote (Africa)",
-            link=url,
-            description="",
-            date_posted=None,
-            source="remoteafrica",
-        )
+        # No JobPosting JSON-LD found - skip this page (don't create placeholder jobs)
+        return None
 
     def _extract_text(self, element) -> str:
         if not element:
@@ -1270,7 +1267,14 @@ class JobCollector:
                     continue
                 if "/jobs?" in href:
                     continue
-                if not re.search(r"/jobs/[^/?#]+", href):
+                slug_match = re.search(r"/jobs/([^/?#]+)", href)
+                if not slug_match:
+                    continue
+                slug = slug_match.group(1).lower()
+                if slug in REMOTEAFRICA_DENYLIST_SLUGS:
+                    if self._skipped_links_logged < self._skipped_links_max_log:
+                        logger.debug("Skipping non-job URL: %s (slug=%s)", href, slug)
+                        self._skipped_links_logged += 1
                     continue
                 if href.startswith("/") and not href.startswith("//"):
                     href = f"https://remote4africa.com{href}"
