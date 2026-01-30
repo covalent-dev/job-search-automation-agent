@@ -19,6 +19,10 @@ try:
     from models import Job, SearchQuery
 except ModuleNotFoundError:  # pragma: no cover
     from shared.models import Job, SearchQuery
+try:
+    from captcha_solver import TwoCaptchaSolver, CaptchaSolveError
+except ModuleNotFoundError:  # pragma: no cover
+    from shared.captcha_solver import TwoCaptchaSolver, CaptchaSolveError
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
@@ -66,6 +70,7 @@ class JobCollector:
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
+        self._captcha_solver: Optional[TwoCaptchaSolver] = None
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
