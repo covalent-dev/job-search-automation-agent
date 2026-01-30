@@ -11,14 +11,17 @@ import sys
 import time
 import re
 import subprocess
+import heapq
+from itertools import count
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import quote_plus, urlparse, parse_qs
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
-from captcha_solver import is_solver_configured, maybe_solve_and_inject
+from linkedin_captcha_solver import is_solver_configured, maybe_solve_and_inject
 from proxy_manager import ProxyManager
+from run_metrics import RunMetrics
 
 try:
     from dotenv import load_dotenv
@@ -50,11 +53,13 @@ class JobCollector:
     def __init__(self, config):
         self.config = config
         self.proxy_manager = ProxyManager.from_config(config)
+        self.metrics = RunMetrics(board="linkedin") if self.config.is_metrics_enabled() else None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         self.detail_salary_page: Optional[Page] = None
         self.detail_description_page: Optional[Page] = None
+        self.detail_queue_pages: list[Page] = []
         self.session_file = SESSION_FILE
         self.legacy_session_file = LEGACY_SESSION_FILE
         self.user_data_dir = USER_DATA_DIR
@@ -82,6 +87,28 @@ class JobCollector:
         self.captcha_log_path = Path("output/captcha_log.json")
         self.captcha_auto_solve_attempted_urls: set[str] = set()
 
+    def _metrics_inc(self, key: str, amount: int = 1) -> None:
+        if not self.metrics:
+            return
+        try:
+            self.metrics.inc(key, amount)
+        except Exception:
+            logger.debug("metrics.inc failed", exc_info=True)
+
+    def _metrics_event(self, kind: str, **data) -> None:
+        if not self.metrics:
+            return
+        try:
+            include_events = self.config.is_metrics_events_enabled()
+        except Exception:
+            include_events = True
+        if not include_events:
+            return
+        try:
+            self.metrics.record_event(kind, **data)
+        except Exception:
+            logger.debug("metrics.record_event failed", exc_info=True)
+
     def _can_prompt(self) -> bool:
         """Return True only when a human can reasonably respond to prompts."""
         try:
@@ -102,10 +129,12 @@ class JobCollector:
         if not self.proxy_manager or not self.proxy_manager.is_enabled():
             return False
 
+        self._metrics_event("proxy_rotate_requested", reason=reason, affinity_key=self._proxy_affinity_key())
         try:
             self.proxy_manager.rotate(self._proxy_affinity_key(), reason=reason)
         except Exception as exc:
             logger.warning("Proxy rotation failed (reason=%s): %s", reason, exc)
+            self._metrics_event("proxy_rotate_failed", reason=reason, error=str(exc))
             return False
 
         try:
@@ -115,9 +144,12 @@ class JobCollector:
 
         try:
             self.start_browser()
+            self._metrics_inc("proxy_rotations", 1)
+            self._metrics_event("proxy_rotated", reason=reason, affinity_key=self._proxy_affinity_key())
             return True
         except Exception as exc:
             logger.error("Failed to restart browser after proxy rotation: %s", exc)
+            self._metrics_event("proxy_rotate_restart_failed", reason=reason, error=str(exc))
             return False
 
     def _extract_linkedin_job_id(self, url: str) -> Optional[str]:
@@ -212,10 +244,15 @@ class JobCollector:
             return False
 
         self.captcha_auto_solve_attempted_urls.add(url)
+        self._metrics_event("captcha_auto_solve_attempt", url=url, context=context)
         print("\n🤖 Attempting automatic captcha solve (if supported)...")
         solved = maybe_solve_and_inject(page, self.config, context=context)
         if not solved:
+            self._metrics_inc("solver_failures", 1)
+            self._metrics_event("captcha_auto_solve_failed", url=url, context=context)
             return False
+        self._metrics_inc("captcha_solved", 1)
+        self._metrics_event("captcha_auto_solve_succeeded", url=url, context=context)
 
         try:
             page.wait_for_timeout(1500)
@@ -979,6 +1016,15 @@ class JobCollector:
                         continue
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
+                    self._metrics_inc("captcha_encounters", 1)
+                    self._metrics_inc("blocked_pages", 1)
+                    self._metrics_event(
+                        "captcha_detected",
+                        context="detail_salary",
+                        reason=captcha_detection.get("reason"),
+                        url=captcha_detection.get("url"),
+                        title=captcha_detection.get("title"),
+                    )
                     self.captcha_consecutive += 1
                     logger.warning(
                         "Detail salary fetch blocked by captcha (reason=%s, title=%s, url=%s)",
@@ -1115,6 +1161,15 @@ class JobCollector:
                     pass
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
+                    self._metrics_inc("captcha_encounters", 1)
+                    self._metrics_inc("blocked_pages", 1)
+                    self._metrics_event(
+                        "captcha_detected",
+                        context="detail_description",
+                        reason=captcha_detection.get("reason"),
+                        url=captcha_detection.get("url"),
+                        title=captcha_detection.get("title"),
+                    )
                     self.captcha_consecutive += 1
                     logger.warning(
                         "Detail description fetch blocked by captcha (reason=%s, title=%s, url=%s)",
@@ -1170,6 +1225,304 @@ class JobCollector:
 
         self.detail_description_cache[url] = description
         return description
+
+    def _ensure_detail_queue_pages(self, concurrency: int) -> list[Page]:
+        if not self.context:
+            return []
+        concurrency = max(int(concurrency), 1)
+        alive: list[Page] = []
+        for page in self.detail_queue_pages:
+            try:
+                if page and not page.is_closed():
+                    alive.append(page)
+            except Exception:
+                continue
+        self.detail_queue_pages = alive
+        while len(self.detail_queue_pages) < concurrency:
+            page = self.context.new_page()
+            self.detail_queue_pages.append(page)
+        return list(self.detail_queue_pages)
+
+    def _attempt_detail_salary_once(self, page: Page, url: str) -> tuple[Optional[str], Optional[str], str]:
+        """
+        Attempt a single salary/job_type extraction.
+
+        Returns: (salary, job_type, status) where status is one of:
+          - ok: extracted something
+          - empty: loaded but couldn't extract salary/job_type
+          - blocked: captcha/authwall detected
+          - error: navigation/other error
+        """
+        if not self.context or not page or not url:
+            return None, None, "error"
+
+        timeout_ms = self.config.get_detail_salary_timeout() * 1000
+        salary_selectors = [
+            ".job-details-fit-level-preferences li",
+            ".job-details-fit-level-preferences button",
+            ".job-details-fit-level-preferences span",
+            ".job-details-preferences-and-skills li",
+            ".jobs-unified-top-card__job-insight",
+        ]
+        detail_section_selectors = [
+            ".job-details-jobs-unified-top-card__container--two-pane",
+            "div.jobs-description__content",
+            "div#job-details",
+        ]
+
+        try:
+            page.set_default_timeout(timeout_ms)
+            page.set_default_navigation_timeout(timeout_ms)
+            page.goto(url, wait_until="domcontentloaded")
+            try:
+                page.wait_for_selector(", ".join(detail_section_selectors), timeout=3000)
+            except Exception:
+                pass
+            captcha_detection = self._is_captcha_page(page)
+            if captcha_detection:
+                self._metrics_inc("captcha_encounters", 1)
+                self._metrics_inc("blocked_pages", 1)
+                self._metrics_event(
+                    "captcha_detected",
+                    context="detail_queue_salary",
+                    reason=captcha_detection.get("reason"),
+                    url=captcha_detection.get("url"),
+                    title=captcha_detection.get("title"),
+                )
+                return None, None, "blocked"
+
+            salary, job_type = self._extract_salary_from_json_ld(page)
+
+            text_chunks: list[str] = []
+            for selector in salary_selectors + detail_section_selectors:
+                for element in page.query_selector_all(selector):
+                    text = self._extract_text(element)
+                    if text:
+                        text_chunks.append(text)
+
+            for text in text_chunks:
+                found_salary, found_job_type = self._classify_attribute_text(text)
+                if found_salary and not salary:
+                    salary = found_salary
+                if found_job_type and not job_type:
+                    job_type = found_job_type
+                if salary and job_type:
+                    break
+
+            if salary or job_type:
+                return salary, job_type, "ok"
+            return None, None, "empty"
+        except Exception as exc:
+            self._metrics_event("detail_queue_salary_error", url=url, error=str(exc))
+            return None, None, "error"
+
+    def _attempt_detail_description_once(self, page: Page, url: str) -> tuple[Optional[str], str]:
+        """
+        Attempt a single description extraction.
+
+        Returns: (description, status) where status is one of: ok | empty | blocked | error
+        """
+        if not self.context or not page or not url:
+            return None, "error"
+
+        timeout_ms = self.config.get_detail_description_timeout() * 1000
+        selectors = [
+            "div.jobs-box__html-content#job-details",
+            "div#job-details",
+            "div.jobs-description__content",
+            "div.jobs-box__html-content",
+            "article.jobs-description__container",
+            ".show-more-less-html__markup",
+            "div.show-more-less-html__markup",
+            "section.show-more-less-html",
+            "div.description__text",
+            "[data-test-id='job-description']",
+        ]
+
+        try:
+            page.set_default_timeout(timeout_ms)
+            page.set_default_navigation_timeout(timeout_ms)
+            page.goto(url, wait_until="domcontentloaded")
+            try:
+                page.wait_for_selector(", ".join(selectors), timeout=3000)
+            except Exception:
+                pass
+            captcha_detection = self._is_captcha_page(page)
+            if captcha_detection:
+                self._metrics_inc("captcha_encounters", 1)
+                self._metrics_inc("blocked_pages", 1)
+                self._metrics_event(
+                    "captcha_detected",
+                    context="detail_queue_description",
+                    reason=captcha_detection.get("reason"),
+                    url=captcha_detection.get("url"),
+                    title=captcha_detection.get("title"),
+                )
+                return None, "blocked"
+
+            description = None
+            for selector in selectors:
+                elem = page.query_selector(selector)
+                text = self._extract_text(elem)
+                if text and (not description or len(text) > len(description)):
+                    description = text
+
+            if description:
+                return description, "ok"
+            return None, "empty"
+        except Exception as exc:
+            self._metrics_event("detail_queue_description_error", url=url, error=str(exc))
+            return None, "error"
+
+    def _fill_missing_details_with_queue(self, jobs: List[Job]) -> None:
+        if not jobs or not self.context:
+            return
+        if self.skip_detail_fetches:
+            return
+
+        salary_enabled = self.config.is_detail_salary_enabled()
+        desc_enabled = self.config.is_detail_description_enabled()
+        if not salary_enabled and not desc_enabled:
+            return
+
+        max_salary = self.config.get_detail_salary_max_per_query()
+        max_desc = self.config.get_detail_description_max_per_query()
+        unlimited_salary = max_salary <= 0
+        unlimited_desc = max_desc <= 0
+
+        concurrency = self.config.get_detail_queue_concurrency()
+        max_attempts = self.config.get_detail_queue_max_attempts()
+        retry_schedule = self.config.get_detail_queue_retry_schedule_seconds()
+        jitter_seconds = self.config.get_detail_queue_jitter_seconds()
+        sleep_budget = float(self.config.get_detail_queue_max_total_wait_seconds())
+
+        pages = self._ensure_detail_queue_pages(concurrency)
+        if not pages:
+            return
+
+        heap: list[tuple[float, int, dict]] = []
+        seq = count()
+        scheduled_salary = 0
+        scheduled_desc = 0
+
+        for job in jobs:
+            url = str(job.link) if job and job.link else ""
+            if not url:
+                continue
+            if salary_enabled and not job.salary and (unlimited_salary or scheduled_salary < max_salary):
+                if url not in self.detail_salary_cache:
+                    scheduled_salary += 1
+                    heapq.heappush(
+                        heap,
+                        (time.monotonic(), next(seq), {"kind": "salary", "url": url, "job": job, "attempt": 0}),
+                    )
+            if desc_enabled and not job.description_full and (unlimited_desc or scheduled_desc < max_desc):
+                if url not in self.detail_description_cache:
+                    scheduled_desc += 1
+                    heapq.heappush(
+                        heap,
+                        (time.monotonic(), next(seq), {"kind": "description", "url": url, "job": job, "attempt": 0}),
+                    )
+
+        if not heap:
+            return
+
+        print(f"\n   🧵 Detail queue: {len(heap)} tasks (concurrency={len(pages)}, attempts={max_attempts})")
+        self._metrics_event(
+            "detail_queue_started",
+            tasks=len(heap),
+            salary_tasks=scheduled_salary,
+            description_tasks=scheduled_desc,
+            concurrency=len(pages),
+            max_attempts=max_attempts,
+        )
+
+        page_index = 0
+        while heap:
+            now = time.monotonic()
+            next_at, _, _ = heap[0]
+            if next_at > now:
+                sleep_for = min(next_at - now, sleep_budget)
+                if sleep_for <= 0:
+                    break
+                time.sleep(sleep_for)
+                sleep_budget -= sleep_for
+                continue
+
+            _, _, task = heapq.heappop(heap)
+            kind = task["kind"]
+            url = task["url"]
+            job = task["job"]
+            attempt = int(task.get("attempt", 0)) + 1
+            task["attempt"] = attempt
+
+            page = pages[page_index % len(pages)]
+            page_index += 1
+
+            if kind == "salary":
+                self.detail_fetch_count_total += 1
+                salary, job_type, status = self._attempt_detail_salary_once(page, url)
+                if status == "ok":
+                    self.detail_salary_cache[url] = (salary, job_type)
+                    if salary and not job.salary:
+                        job.salary = salary
+                        self.total_jobs_with_salary += 1
+                    if job_type and not job.job_type:
+                        job.job_type = job_type
+                    continue
+            else:
+                self.detail_description_count_total += 1
+                description, status = self._attempt_detail_description_once(page, url)
+                if status == "ok":
+                    self.detail_description_cache[url] = description
+                    if description and not job.description_full:
+                        job.description_full = description
+                    continue
+
+            if status == "blocked":
+                if self.proxy_manager.should_rotate_on_captcha() and self._rotate_proxy_and_restart(reason="captcha_detail_queue"):
+                    pages = self._ensure_detail_queue_pages(concurrency)
+                    if not pages:
+                        break
+
+                if self._try_auto_solve_captcha(page, url, context=f"detail_queue:{kind}"):
+                    if kind == "salary":
+                        salary, job_type, retry_status = self._attempt_detail_salary_once(page, url)
+                        if retry_status == "ok":
+                            self.detail_salary_cache[url] = (salary, job_type)
+                            if salary and not job.salary:
+                                job.salary = salary
+                                self.total_jobs_with_salary += 1
+                            if job_type and not job.job_type:
+                                job.job_type = job_type
+                            continue
+                    else:
+                        description, retry_status = self._attempt_detail_description_once(page, url)
+                        if retry_status == "ok":
+                            self.detail_description_cache[url] = description
+                            if description and not job.description_full:
+                                job.description_full = description
+                            continue
+
+            if attempt >= max_attempts:
+                self._metrics_event("detail_queue_give_up", kind=kind, url=url, attempts=attempt, status=status)
+                continue
+
+            backoff_index = max(min(attempt - 1, len(retry_schedule) - 1), 0)
+            base_delay = float(retry_schedule[backoff_index])
+            jitter = random.uniform(0.0, float(jitter_seconds)) if jitter_seconds > 0 else 0.0
+            next_try = time.monotonic() + base_delay + jitter
+            heapq.heappush(heap, (next_try, next(seq), task))
+            self._metrics_event(
+                "detail_queue_retry_scheduled",
+                kind=kind,
+                url=url,
+                attempt=attempt,
+                delay_seconds=round(base_delay + jitter, 3),
+                status=status,
+            )
+
+        self._metrics_event("detail_queue_finished", remaining=len(heap), sleep_budget_seconds=round(sleep_budget, 3))
 
 
     def _safe_goto(self, url: str) -> bool:
@@ -1313,6 +1666,16 @@ class JobCollector:
         except Exception:
             logger.debug("Detail description page close failed", exc_info=True)
         try:
+            for page in list(self.detail_queue_pages):
+                try:
+                    if page and not page.is_closed():
+                        page.close()
+                except Exception:
+                    continue
+            self.detail_queue_pages = []
+        except Exception:
+            logger.debug("Detail queue pages close failed", exc_info=True)
+        try:
             if self.context:
                 self.context.close()
         except Exception:
@@ -1333,6 +1696,7 @@ class JobCollector:
         """Collect jobs for a single search query"""
         jobs = []
         seen_links = set()
+        detail_queue_enabled = bool(self.config.is_detail_queue_enabled())
         max_pages = self.config.get_max_pages()
         unlimited_pages = max_pages <= 0
         results_per_page = 25
@@ -1372,6 +1736,15 @@ class JobCollector:
                 self._random_delay()
                 captcha_detection = self._is_captcha_page(self.page)
                 if captcha_detection:
+                    self._metrics_inc("captcha_encounters", 1)
+                    self._metrics_inc("blocked_pages", 1)
+                    self._metrics_event(
+                        "captcha_detected",
+                        context="search",
+                        reason=captcha_detection.get("reason"),
+                        url=captcha_detection.get("url"),
+                        title=captcha_detection.get("title"),
+                    )
                     self.captcha_consecutive += 1
                     logger.warning(
                         "Search page blocked (reason=%s, title=%s, url=%s)",
@@ -1454,53 +1827,54 @@ class JobCollector:
                     try:
                         job = self._extract_job_from_card(card)
                         if job and str(job.link) not in seen_links:
-                            if (
-                                self.config.is_detail_salary_enabled()
-                                and not job.salary
-                                and job.link
-                                and not self.skip_detail_fetches
-                                and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
-                            ):
-                                if unlimited_detail_fetches:
-                                    fetch_label = f"{detail_fetches + 1}/∞"
-                                else:
-                                    fetch_label = f"{detail_fetches + 1}/{max_detail_fetches}"
-                                self.detail_fetch_count_total += 1
-                                print(f"\r   Detail salary: {fetch_label}", end="", flush=True)
-                                logger.info(
-                                    "Detail salary fetch %s: %s",
-                                    fetch_label,
-                                    job.link,
-                                )
-                                detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
-                                print("")
-                                if detail_salary:
-                                    job.salary = detail_salary
-                                if detail_job_type:
-                                    job.job_type = detail_job_type
-                                detail_fetches += 1
+                            if not detail_queue_enabled:
+                                if (
+                                    self.config.is_detail_salary_enabled()
+                                    and not job.salary
+                                    and job.link
+                                    and not self.skip_detail_fetches
+                                    and (unlimited_detail_fetches or detail_fetches < max_detail_fetches)
+                                ):
+                                    if unlimited_detail_fetches:
+                                        fetch_label = f"{detail_fetches + 1}/∞"
+                                    else:
+                                        fetch_label = f"{detail_fetches + 1}/{max_detail_fetches}"
+                                    self.detail_fetch_count_total += 1
+                                    print(f"\r   Detail salary: {fetch_label}", end="", flush=True)
+                                    logger.info(
+                                        "Detail salary fetch %s: %s",
+                                        fetch_label,
+                                        job.link,
+                                    )
+                                    detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
+                                    print("")
+                                    if detail_salary:
+                                        job.salary = detail_salary
+                                    if detail_job_type:
+                                        job.job_type = detail_job_type
+                                    detail_fetches += 1
 
-                            if (
-                                self.config.is_detail_description_enabled()
-                                and job.link
-                                and (unlimited_detail_description_fetches or detail_description_fetches < max_detail_description_fetches)
-                            ):
-                                if unlimited_detail_description_fetches:
-                                    fetch_label = f"{detail_description_fetches + 1}/∞"
-                                else:
-                                    fetch_label = f"{detail_description_fetches + 1}/{max_detail_description_fetches}"
-                                self.detail_description_count_total += 1
-                                print(f"\r   Detail description: {fetch_label}", end="", flush=True)
-                                logger.info(
-                                    "Detail description fetch %s: %s",
-                                    fetch_label,
-                                    job.link,
-                                )
-                                detail_description = self._fetch_detail_description(str(job.link))
-                                print("")
-                                if detail_description:
-                                    job.description_full = detail_description
-                                detail_description_fetches += 1
+                                if (
+                                    self.config.is_detail_description_enabled()
+                                    and job.link
+                                    and (unlimited_detail_description_fetches or detail_description_fetches < max_detail_description_fetches)
+                                ):
+                                    if unlimited_detail_description_fetches:
+                                        fetch_label = f"{detail_description_fetches + 1}/∞"
+                                    else:
+                                        fetch_label = f"{detail_description_fetches + 1}/{max_detail_description_fetches}"
+                                    self.detail_description_count_total += 1
+                                    print(f"\r   Detail description: {fetch_label}", end="", flush=True)
+                                    logger.info(
+                                        "Detail description fetch %s: %s",
+                                        fetch_label,
+                                        job.link,
+                                    )
+                                    detail_description = self._fetch_detail_description(str(job.link))
+                                    print("")
+                                    if detail_description:
+                                        job.description_full = detail_description
+                                    detail_description_fetches += 1
 
                             seen_links.add(str(job.link))
                             jobs.append(job)
@@ -1562,6 +1936,14 @@ class JobCollector:
                 break
 
             page_index += 1
+
+        if detail_queue_enabled:
+            try:
+                self._fill_missing_details_with_queue(jobs)
+            except CaptchaAbort:
+                raise
+            except Exception as exc:
+                logger.warning("Detail queue failed for query %s: %s", query, exc)
 
         return jobs
 
@@ -1758,6 +2140,28 @@ class JobCollector:
         print(f"\n📊 Total: {len(unique_jobs)} unique jobs collected")
         if self.first_captcha_fetch_count is not None:
             print(f"⚠️  Hit captcha after {self.first_captcha_fetch_count} detail fetches")
+
+        if self.metrics:
+            try:
+                self.metrics.counters["jobs_collected_total"] = int(len(all_jobs))
+                self.metrics.counters["jobs_unique"] = int(len(unique_jobs))
+                self.metrics.counters["jobs_with_salary"] = int(self.total_jobs_with_salary)
+                self.metrics.counters["detail_salary_fetches"] = int(self.detail_fetch_count_total)
+                self.metrics.counters["detail_description_fetches"] = int(self.detail_description_count_total)
+                self.metrics.counters["captcha_events_logged"] = int(len(self.captcha_events))
+
+                metrics_path = self.metrics.write_json(
+                    template=self.config.get_metrics_output_file(),
+                    extra={
+                        "proxy_enabled": bool(self.proxy_manager and self.proxy_manager.is_enabled()),
+                        "proxy_provider": getattr(self.proxy_manager.settings, "provider", None) if self.proxy_manager else None,
+                        "detail_queue_enabled": bool(self.config.is_detail_queue_enabled()),
+                        "headless": bool(self.config.is_headless()),
+                    },
+                )
+                print(f"📈 Metrics: {metrics_path}")
+            except Exception as exc:
+                logger.warning("Failed to write run metrics: %s", exc)
         print("="*60 + "\n")
 
         logger.info(f"Collection complete: {len(unique_jobs)} unique jobs")

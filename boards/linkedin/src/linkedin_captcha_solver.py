@@ -1,5 +1,5 @@
 """
-Captcha solver integration for LinkedIn collector.
+LinkedIn captcha solver integration for the collector.
 
 Bridges the shared TwoCaptchaSolver with LinkedIn-specific captcha handling.
 Supports Cloudflare Turnstile challenges commonly seen on LinkedIn.

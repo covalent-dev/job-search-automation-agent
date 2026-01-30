@@ -21,6 +21,13 @@ search:
   detail_salary_max_per_query: 10
   detail_salary_delay_min: 2.0
   detail_salary_delay_max: 4.0
+  detail_queue:
+    enabled: true
+    concurrency: 2
+    max_attempts: 3
+    retry_schedule_seconds: [60, 300, 900]  # 1m → 5m → 15m
+    jitter_seconds: 10
+    max_total_wait_seconds: 900
   job_boards:
   - linkedin
 output:
@@ -41,6 +48,21 @@ browser:
   channel: ''
   executable_path: ''
   use_stealth: false
+  proxy:
+    enabled: false
+    provider: "iproyal"  # generic | iproyal
+    server: ""
+    host: ""
+    port: ""
+    username: ""
+    password: ""
+    username_template: ""  # include {session} if provider requires
+    sticky_session: true
+    session_scope: "query"  # run | query
+    pool_size: 4
+    session_ttl_seconds: 1800
+    rotate_on_captcha: true
+    rotate_on_failure: false
 ai_filter:
   enabled: false
   model: deepseek-coder-v2:latest
@@ -67,6 +89,11 @@ dedupe:
 logging:
   level: INFO
   log_file: logs/job_bot_{timestamp}.log
+
+metrics:
+  enabled: true
+  output_file: output/run_metrics_{timestamp}.json
+  include_events: true
 
 # Captcha auto-solve (optional; requires provider API key via .env)
 captcha:

@@ -122,6 +122,27 @@ class ConfigLoader:
         _validate_positive(self.get('captcha.solve_timeout_seconds') or self.get('captcha.timeout'), 'captcha.solve_timeout_seconds')
         _validate_non_negative(self.get('captcha.max_solve_attempts') or self.get('captcha.max_retries'), 'captcha.max_solve_attempts')
 
+        # Detail queue settings (validated only when enabled)
+        if self.is_detail_queue_enabled():
+            _validate_positive(self.get_detail_queue_concurrency(), 'search.detail_queue.concurrency')
+            _validate_positive(self.get_detail_queue_max_attempts(), 'search.detail_queue.max_attempts')
+            _validate_non_negative(self.get_detail_queue_jitter_seconds(), 'search.detail_queue.jitter_seconds')
+            _validate_non_negative(self.get_detail_queue_max_total_wait_seconds(), 'search.detail_queue.max_total_wait_seconds')
+            schedule = self.get_detail_queue_retry_schedule_seconds()
+            if not schedule:
+                raise ConfigValidationError("Invalid config: 'search.detail_queue.retry_schedule_seconds' must be a non-empty list")
+            for idx, value in enumerate(schedule):
+                try:
+                    seconds = float(value)
+                except Exception as exc:
+                    raise ConfigValidationError(
+                        f"Invalid config: 'search.detail_queue.retry_schedule_seconds[{idx}]' must be numeric, got {value!r}"
+                    ) from exc
+                if seconds <= 0:
+                    raise ConfigValidationError(
+                        f"Invalid config: 'search.detail_queue.retry_schedule_seconds[{idx}]' must be > 0, got {value!r}"
+                    )
+
         # Proxy settings (validated only when enabled)
         if self.is_proxy_enabled():
             try:
@@ -163,6 +184,62 @@ class ConfigLoader:
     def get_max_pages(self) -> int:
         """Get max pages to paginate per search"""
         return int(self.get('search.max_pages', 1))
+
+    # === Detail Queue Config ===
+
+    def is_detail_queue_enabled(self) -> bool:
+        """
+        Enable queued detail fetches (salary/description) to avoid stalling collection.
+
+        Default behavior:
+          - If a config value exists, respect it.
+          - Otherwise enable queue mode when any detail fetch is enabled.
+        """
+        explicit = self.get("search.detail_queue.enabled", None)
+        if explicit is not None:
+            return bool(explicit)
+        return bool(self.is_detail_salary_enabled() or self.is_detail_description_enabled())
+
+    def get_detail_queue_concurrency(self) -> int:
+        value = self.get("search.detail_queue.concurrency", 2)
+        try:
+            return max(int(value), 1)
+        except Exception:
+            return 1
+
+    def get_detail_queue_max_attempts(self) -> int:
+        value = self.get("search.detail_queue.max_attempts", 3)
+        try:
+            return max(int(value), 1)
+        except Exception:
+            return 1
+
+    def get_detail_queue_retry_schedule_seconds(self) -> List[int]:
+        value = self.get("search.detail_queue.retry_schedule_seconds", None)
+        if isinstance(value, list) and value:
+            out: list[int] = []
+            for item in value:
+                try:
+                    out.append(max(int(item), 1))
+                except Exception:
+                    continue
+            if out:
+                return out
+        return [60, 300, 900]
+
+    def get_detail_queue_jitter_seconds(self) -> float:
+        value = self.get("search.detail_queue.jitter_seconds", 10)
+        try:
+            return max(float(value), 0.0)
+        except Exception:
+            return 0.0
+
+    def get_detail_queue_max_total_wait_seconds(self) -> int:
+        value = self.get("search.detail_queue.max_total_wait_seconds", 900)
+        try:
+            return max(int(value), 0)
+        except Exception:
+            return 0
 
     def is_detail_salary_enabled(self) -> bool:
         """Check if detail salary fetch is enabled"""
@@ -273,6 +350,17 @@ class ConfigLoader:
     def use_stealth(self) -> bool:
         """Check if Playwright stealth should be enabled"""
         return self.get('browser.use_stealth', False)
+
+    # === Metrics Config ===
+
+    def is_metrics_enabled(self) -> bool:
+        return bool(self.get("metrics.enabled", True))
+
+    def get_metrics_output_file(self) -> str:
+        return self.get("metrics.output_file", "output/run_metrics_{timestamp}.json")
+
+    def is_metrics_events_enabled(self) -> bool:
+        return bool(self.get("metrics.include_events", True))
 
     # === Captcha Config ===
 

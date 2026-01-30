@@ -33,6 +33,15 @@ search:
   detail_salary_max_per_query: 3
   detail_salary_delay_min: 3.0
   detail_salary_delay_max: 6.0
+
+  # Queued detail fetches (prevents long stalls on blocked pages)
+  detail_queue:
+    enabled: true
+    concurrency: 2
+    max_attempts: 3
+    retry_schedule_seconds: [60, 300, 900]  # 1m → 5m → 15m
+    jitter_seconds: 10
+    max_total_wait_seconds: 900
   
   # Job boards to search
   job_boards:
@@ -69,6 +78,22 @@ browser:
   channel: ""
   executable_path: ""
   use_stealth: false
+  proxy:
+    enabled: false
+    provider: "iproyal"  # generic | iproyal
+    # Prefer secrets via .env (PROXY_* or IPROYAL_*); leave these blank in config.
+    server: ""
+    host: ""
+    port: ""
+    username: ""
+    password: ""
+    username_template: ""  # include {session} if provider requires
+    sticky_session: true
+    session_scope: "query"  # run | query
+    pool_size: 4
+    session_ttl_seconds: 1800
+    rotate_on_captcha: true
+    rotate_on_failure: false
 
 # AI Filtering (bonus feature - Phase 5)
 ai_filter:
@@ -100,6 +125,11 @@ dedupe:
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   log_file: "logs/job_bot_{timestamp}.log"
+
+metrics:
+  enabled: true
+  output_file: output/run_metrics_{timestamp}.json
+  include_events: true
 
 # Captcha auto-solve (optional; requires provider API key via .env)
 captcha:

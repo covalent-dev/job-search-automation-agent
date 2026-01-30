@@ -21,7 +21,8 @@ fi
 
 # Get repo root (monorepo root)
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PYTHONPATH="$REPO_ROOT/shared:$REPO_ROOT/$BOARD_DIR/src:$PYTHONPATH"
+# Put board src first so board-specific shims can override shared modules.
+export PYTHONPATH="$REPO_ROOT/$BOARD_DIR/src:$REPO_ROOT/shared:$PYTHONPATH"
 export JOB_BOT_BOARD="$BOARD"
 
 # Load repo-level .env if present (gitignored secrets; optional)
