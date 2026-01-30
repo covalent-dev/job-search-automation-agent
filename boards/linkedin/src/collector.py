@@ -567,32 +567,36 @@ class JobCollector:
     def _normalize_salary_text(self, text: str) -> Optional[str]:
         if not text:
             return None
+        # Pattern supports K/k shorthand (e.g., $120K/yr, $120k - $150k per year)
+        # and handles /yr, /hr notation alongside "per year", "an hour" etc.
         pattern = re.compile(
             r"(?:\b(?:estimated|from|up to|starting at|starting from)\b\s+)?"
-            r"([$£€])\s?(\d[\d,]*(?:\.\d+)?)"
-            r"(?:\s*-\s*[$£€]?\s?(\d[\d,]*(?:\.\d+)?))?"
-            r"\s*(?:an?|per)?\s*(hour|year|yr|month|week|day)\b",
+            r"([$£€])\s?(\d[\d,]*(?:\.\d+)?)\s*([kK])?"
+            r"(?:\s*[-–—]\s*[$£€]?\s?(\d[\d,]*(?:\.\d+)?)\s*([kK])?)?"
+            r"\s*(?:an?|per|/)?\s*(hour|hr|year|yr|month|week|day)\b",
             re.IGNORECASE,
         )
         match = pattern.search(text)
         if not match:
             return None
-        currency, min_raw, max_raw, unit_raw = match.groups()
+        currency, min_raw, min_k, max_raw, max_k, unit_raw = match.groups()
         unit = self._normalize_salary_unit(unit_raw)
         if not unit:
             return None
 
-        def _format_amount(value_raw: str) -> str:
+        def _format_amount(value_raw: str, has_k: bool) -> str:
             try:
                 value = float(value_raw.replace(",", ""))
+                if has_k:
+                    value *= 1000
             except Exception:
                 return f"{currency}{value_raw}"
             if value.is_integer():
                 return f"{currency}{int(value):,}"
             return f"{currency}{value:,.2f}"
 
-        min_text = _format_amount(min_raw)
-        max_text = _format_amount(max_raw) if max_raw else None
+        min_text = _format_amount(min_raw, bool(min_k))
+        max_text = _format_amount(max_raw, bool(max_k)) if max_raw else None
         article = "an" if unit == "hour" else "a"
         if max_text:
             return f"{min_text} - {max_text} {article} {unit}"
