@@ -1059,7 +1059,9 @@ class JobCollector:
 
     def _safe_goto(self, url: str) -> bool:
         """Navigate with retry for flaky pages, with human-like behavior."""
-        for attempt in range(1, self.max_retries + 1):
+        attempt = 0
+        while attempt < self.max_retries:
+            attempt += 1
             try:
                 self.page.goto(url, wait_until="domcontentloaded")
                 if self.config.use_stealth():
@@ -1082,8 +1084,6 @@ class JobCollector:
                         captcha_detection["title"],
                         captcha_detection["url"],
                     )
-                    self._captcha_backoff()
-
                     if self.captcha_solver.available():
                         logger.info("Attempting to solve captcha on search/navigation page...")
                         solved, reason = self.captcha_solver.solve_if_present(self.page, detection=captcha_detection)
@@ -1112,8 +1112,12 @@ class JobCollector:
                         except Exception as exc:
                             logger.warning("Browser restart for proxy rotation failed: %s", exc)
                             return False
+                        attempt = max(attempt - 1, 0)
+                        continue
 
-                    time.sleep(random.uniform(5.0, 10.0))
+                    delay_seconds = random.uniform(5.0, 10.0) * attempt
+                    logger.info("Backing off %.1fs before retrying navigation...", delay_seconds)
+                    time.sleep(delay_seconds)
                     continue
 
                 self.captcha_consecutive = 0
