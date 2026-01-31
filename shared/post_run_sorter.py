@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import re
+import textwrap
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -68,6 +69,7 @@ def _format_board_label(config: ConfigLoader) -> str:
     primary = boards[0] if boards else "jobs"
     return primary.replace("-", " ").replace("_", " ").title()
 
+
 def _escape_md_cell(value: str) -> str:
     return (value or "").replace("|", "\\|").replace("\n", " ").strip()
 
@@ -83,27 +85,67 @@ def _summarize_location_cell(location: str, max_items: int = 8) -> str:
     return f"{shown} +{len(parts) - max_items} more"
 
 
-def _job_meta_table(job: Job, include_ai: bool) -> list[str]:
-    salary = job.salary or "-"
-    posted = str(job.date_posted) if job.date_posted else "-"
-    ai = f"{job.ai_score}/10" if job.ai_score is not None else "-"
+def _truncate(text: str, max_len: int) -> str:
+    value = (text or "").strip()
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - 3].rstrip() + "..."
 
-    header_cols = ["Company", "Location", "Source", "Salary", "Posted"]
-    row_cols = [
-        _escape_md_cell(job.company or "-"),
-        _escape_md_cell(_summarize_location_cell(job.location or "-")),
-        _escape_md_cell(job.source or "-"),
-        _escape_md_cell(salary),
-        _escape_md_cell(posted),
-    ]
+
+def _split_ai_reasoning(text: str, max_bullets: int = 4) -> list[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return []
+
+    normalized = re.sub(r"\s+", " ", raw)
+    sentences = re.split(r"(?<=[.!?])\s+", normalized)
+    bullets: list[str] = []
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        bullets.append(_truncate(s, 160))
+        if len(bullets) >= max_bullets:
+            break
+    if not bullets:
+        bullets = [_truncate(normalized, 200)]
+    return bullets
+
+
+def _job_details_grid_table(jobs: List[Job]) -> list[str]:
+    include_ai = any(job.ai_score is not None for job in jobs)
+    cols = ["#", "Title", "Company", "Location", "Source", "Salary", "Job Type", "Posted"]
     if include_ai:
-        header_cols.append("AI")
-        row_cols.append(_escape_md_cell(ai))
+        cols.append("AI")
 
-    header = "| " + " | ".join(header_cols) + " |"
-    separator = "| " + " | ".join(["---"] * len(header_cols)) + " |"
-    row = "| " + " | ".join(row_cols) + " |"
-    return [header, separator, row, ""]
+    lines = [
+        "| " + " | ".join(cols) + " |",
+        "| " + " | ".join(["---"] * len(cols)) + " |",
+    ]
+    for i, job in enumerate(jobs, 1):
+        title = _truncate(job.title or "-", 80)
+        title_link = f"[{_escape_md_cell(title)}]({job.link})" if job.link else _escape_md_cell(title)
+        salary = job.salary or "-"
+        job_type = job.job_type or "-"
+        posted = str(job.date_posted) if job.date_posted else "-"
+        ai = f"{job.ai_score}/10" if job.ai_score is not None else "-"
+
+        row = [
+            str(i),
+            title_link,
+            _escape_md_cell(job.company or "Unknown Company"),
+            _escape_md_cell(_summarize_location_cell(job.location or "-")),
+            _escape_md_cell(job.source or "-"),
+            _escape_md_cell(salary),
+            _escape_md_cell(job_type),
+            _escape_md_cell(posted),
+        ]
+        if include_ai:
+            row.append(_escape_md_cell(ai))
+
+        lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+    return lines
 
 
 def _write_outputs(config: ConfigLoader, jobs: List[Job], queries: List[SearchQuery], summary: dict) -> dict:
@@ -132,18 +174,46 @@ def _write_outputs(config: ConfigLoader, jobs: List[Job], queries: List[SearchQu
         "## Ranked Listings\n",
     ]
 
-    include_ai = any(job.ai_score is not None for job in jobs)
     for i, job in enumerate(jobs, 1):
         lines.append(f"### {i}. {job.title}\n")
-        lines.extend(_job_meta_table(job, include_ai=include_ai))
+        lines.append(f"**Company:** {job.company or 'Unknown Company'}  ")
+        lines.append(f"**Location:** {job.location or '-'}  ")
+        lines.append(f"**Source:** {job.source or '-'}  ")
+        if job.salary:
+            lines.append(f"**Salary:** {job.salary}  ")
+        if job.job_type:
+            lines.append(f"**Job Type:** {job.job_type}  ")
+        if job.date_posted:
+            lines.append(f"**Posted:** {job.date_posted}  ")
+        if job.ai_score is not None:
+            lines.append(f"**AI Score:** {job.ai_score}/10  ")
         lines.append(f"**Link:** [{job.title}]({job.link})\n")
         if job.description:
             lines.append(f"> {job.description[:300]}{'...' if len(job.description) > 300 else ''}\n")
-        if job.ai_reasoning:
-            reasoning = job.ai_reasoning[:180]
-            suffix = "..." if len(job.ai_reasoning) > 180 else ""
-            lines.append(f"**AI Notes:** {reasoning}{suffix}\n")
         lines.append("")
+
+    if any(job.ai_reasoning for job in jobs):
+        lines.append("---\n")
+        lines.append("## AI Explanations\n")
+        for i, job in enumerate(jobs, 1):
+            if not job.ai_reasoning and job.ai_score is None:
+                continue
+            title = _truncate(job.title or "-", 90)
+            score = f"{job.ai_score}/10" if job.ai_score is not None else "-"
+            lines.append(f"> [!note]- {i}. {title} — {score}")
+            if job.link:
+                lines.append(f"> - Link: [{title}]({job.link})")
+            if job.ai_reasoning:
+                for b in _split_ai_reasoning(job.ai_reasoning):
+                    lines.append(f"> - {textwrap.fill(b, width=110)}")
+            else:
+                lines.append("> - (No AI notes)")
+            lines.append(">")
+            lines.append("")
+
+    lines.append("---\n")
+    lines.append("## Job Details Grid\n")
+    lines.extend(_job_details_grid_table(jobs))
 
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
