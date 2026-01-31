@@ -7,23 +7,20 @@ import json
 import logging
 import os
 import random
+import sys
 import time
 import re
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
-try:
-    from models import Job, SearchQuery
-except ModuleNotFoundError:  # pragma: no cover
-    from shared.models import Job, SearchQuery
-try:
-    from captcha_solver import TwoCaptchaSolver, CaptchaSolveError
-except ModuleNotFoundError:  # pragma: no cover
-    from shared.captcha_solver import TwoCaptchaSolver, CaptchaSolveError
+from models import Job, SearchQuery
+from run_metrics import RunMetrics
+from proxy_manager import ProxyManager
+from captcha_solver import CaptchaSolver
+
 logger = logging.getLogger(__name__)
 
 SESSION_FILE = Path("config/session.json")
@@ -71,163 +68,99 @@ class JobCollector:
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
-        self._captcha_solver: Optional[TwoCaptchaSolver] = None
-        self._captcha_solver_init_attempted = False
-
-    def _get_captcha_solver(self) -> Optional[TwoCaptchaSolver]:
-        """Lazily initialize the captcha solver if enabled and API key is available."""
-        if self._captcha_solver is not None:
-            return self._captcha_solver
-        if self._captcha_solver_init_attempted:
-            return None
-        self._captcha_solver_init_attempted = True
-
-        if not self.config.is_captcha_auto_solve_enabled():
-            logger.debug("Captcha auto-solve is disabled")
-            return None
-
-        api_key = self.config.get_captcha_api_key()
-        if not api_key:
-            logger.warning("Captcha auto-solve enabled but no API key found in env")
-            return None
-
-        provider = self.config.get_captcha_provider()
-        if provider.lower() != "2captcha":
-            logger.warning("Unsupported captcha provider: %s (only 2captcha supported)", provider)
-            return None
+        self.metrics = RunMetrics(board="indeed")
+        self.proxy_mgr = ProxyManager(config)
+        self.solver = CaptchaSolver(config)
+        self._startup_session_key = "indeed:startup"
 
         try:
-            self._captcha_solver = TwoCaptchaSolver(api_key=api_key)
-            logger.info("Captcha solver initialized (provider=%s)", provider)
-        except Exception as exc:
-            logger.error("Failed to initialize captcha solver: %s", exc)
-            return None
+            self.metrics.set_gauge("proxy_enabled", bool(self.config.get("proxy.enabled", False)))
+            self.metrics.set_gauge("proxy_provider", str(self.config.get("proxy.provider", "")))
+            self.metrics.set_gauge("captcha_solver_enabled", bool(self.config.get("captcha.enabled", False)))
+            self.metrics.set_gauge("captcha_provider", str(self.config.get("captcha.provider", "")))
+        except Exception:
+            pass
 
-        return self._captcha_solver
+    def _non_interactive(self) -> bool:
+        try:
+            return not sys.stdin.isatty()
+        except Exception:
+            return True
 
-    def _extract_turnstile_sitekey(self, page: Page) -> Optional[str]:
-        """Extract Turnstile sitekey from page if present."""
-        selectors = [
-            ".cf-turnstile[data-sitekey]",
-            "[data-sitekey]",
-            "iframe[src*='challenges.cloudflare.com']",
-        ]
-        for selector in selectors:
-            elem = page.query_selector(selector)
-            if not elem:
-                continue
-            sitekey = elem.get_attribute("data-sitekey")
-            if sitekey:
-                return sitekey.strip()
-            if "iframe" in selector:
-                src = elem.get_attribute("src") or ""
-                import re
-                match = re.search(r"sitekey=([^&]+)", src)
-                if match:
-                    return match.group(1).strip()
-        return None
+    def _save_block_artifacts(self, page: Page, *, prefix: str) -> None:
+        try:
+            Path("output").mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            page.screenshot(path=f"output/{prefix}_{timestamp}.png")
+            Path(f"output/{prefix}_{timestamp}.html").write_text(page.content(), encoding="utf-8")
+        except Exception:
+            logger.debug("Failed to save block artifacts", exc_info=True)
 
-    def _attempt_turnstile_solve(self, page: Page, url: str) -> bool:
-        """
-        Attempt to solve a Turnstile captcha on the page.
-        Returns True if solved and verified, False otherwise.
-        """
-        solver = self._get_captcha_solver()
-        if not solver:
-            return False
+    def _restart_browser_with_proxy(self, *, session_key: str, reason: str) -> None:
+        logger.info("Restarting browser to apply proxy change (session=%s, reason=%s)", session_key, reason)
+        self.stop_browser()
+        self.start_browser(session_key=session_key)
 
-        sitekey = self._extract_turnstile_sitekey(page)
-        if not sitekey:
-            logger.info("No Turnstile sitekey found; cannot auto-solve (static Cloudflare page?)")
-            return False
-
-        max_attempts = self.config.get_captcha_max_solve_attempts()
-        timeout = self.config.get_captcha_solve_timeout_seconds()
-        poll_interval = self.config.get_captcha_poll_interval_seconds()
-
+    def _goto_with_antibot(self, url: str, *, session_key: str, kind: str) -> bool:
+        """Navigate to a URL and handle Cloudflare/captcha challenges (best-effort)."""
+        if not self.page:
+            raise RuntimeError("Browser not started")
+        max_attempts = max(1, int(self.config.get("captcha.max_retries", 2)) + 1)
         for attempt in range(1, max_attempts + 1):
-            try:
-                logger.info(
-                    "Attempting Turnstile solve (attempt %s/%s, sitekey=%s...)",
-                    attempt, max_attempts, sitekey[:12]
-                )
-                print(f"\n   🔐 Solving Turnstile captcha (attempt {attempt}/{max_attempts})...")
+            if not self._safe_goto(url):
+                continue
 
-                token = solver.solve_turnstile(
-                    sitekey=sitekey,
-                    page_url=url,
-                    timeout_seconds=timeout,
-                    poll_interval_seconds=poll_interval,
-                )
+            captcha_detection = self._is_captcha_page(self.page)
+            if not captcha_detection:
+                return True
 
-                logger.info("Received Turnstile token (length=%s)", len(token))
+            self.metrics.inc("captcha_encounters")
+            self.metrics.inc("blocked_pages")
+            logger.warning(
+                "%s blocked (attempt %s/%s, reason=%s, title=%s, url=%s)",
+                kind,
+                attempt,
+                max_attempts,
+                captcha_detection.get("reason"),
+                captcha_detection.get("title"),
+                captcha_detection.get("url"),
+            )
+            self._save_block_artifacts(self.page, prefix=f"{kind}_captcha")
 
-                # Inject token into page
-                inject_script = """
-                    (token) => {
-                        // Method 1: Set hidden input
-                        const inputs = document.querySelectorAll('input[name="cf-turnstile-response"], input[name="cf_turnstile_response"]');
-                        inputs.forEach(input => { input.value = token; });
+            solved = False
+            if self.solver.available():
+                ok, solve_reason = self.solver.solve_if_present(self.page, detection=captcha_detection)
+                if ok:
+                    solved = True
+                    self.metrics.inc("captcha_solved")
+                    self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
+                else:
+                    self.metrics.inc("solver_failures")
+                    logger.info("%s solve attempt failed (%s)", kind, solve_reason)
 
-                        // Method 2: Set turnstile callback data
-                        const turnstileDiv = document.querySelector('.cf-turnstile');
-                        if (turnstileDiv) {
-                            turnstileDiv.setAttribute('data-response', token);
-                        }
-
-                        // Method 3: Call turnstile callback if available
-                        if (window.turnstile && window.turnstile.getResponse) {
-                            try {
-                                const widgetId = document.querySelector('.cf-turnstile')?.getAttribute('data-widget-id');
-                                if (widgetId) {
-                                    window.turnstile.reset(widgetId);
-                                }
-                            } catch (e) {}
-                        }
-
-                        // Method 4: Dispatch event
-                        const event = new CustomEvent('turnstile-callback', { detail: { token: token } });
-                        document.dispatchEvent(event);
-
-                        return true;
-                    }
-                """
-                page.evaluate(inject_script, token)
-                logger.debug("Injected Turnstile token into page")
-
-                # Try to submit the challenge form
-                form = page.query_selector("form#challenge-form, form[action*='challenge']")
-                if form:
-                    submit_btn = form.query_selector("input[type='submit'], button[type='submit']")
-                    if submit_btn:
-                        submit_btn.click()
-                        logger.debug("Clicked challenge form submit button")
-                    else:
-                        page.evaluate("(form) => form.submit()", form)
-                        logger.debug("Submitted challenge form via JS")
-
-                # Wait for navigation or page change
-                time.sleep(3)
+            if solved:
                 try:
-                    page.wait_for_load_state("domcontentloaded", timeout=10000)
+                    self.page.wait_for_load_state("domcontentloaded", timeout=8000)
                 except Exception:
                     pass
-
-                # Verify captcha is cleared
-                if not self._is_captcha_page(page):
-                    logger.info("Turnstile captcha solved successfully")
-                    print("   ✓ Captcha solved!")
+                if not self._is_captcha_page(self.page):
                     return True
 
-                logger.warning("Page still shows captcha after token injection (attempt %s)", attempt)
+            self.proxy_mgr.record_captcha(session_key=session_key, solved=False)
+            if self.proxy_mgr.enabled:
+                self.metrics.inc("proxy_rotations")
+                self.proxy_mgr.rotate(session_key=session_key)
+                self._restart_browser_with_proxy(session_key=session_key, reason=f"{kind}_blocked")
+                continue
 
-            except CaptchaSolveError as exc:
-                logger.warning("Turnstile solve failed (attempt %s/%s): %s", attempt, max_attempts, exc)
-                print(f"   ✗ Solve failed: {exc}")
-            except Exception as exc:
-                logger.error("Unexpected error during Turnstile solve (attempt %s/%s): %s", attempt, max_attempts, exc)
+            logger.error(
+                "%s blocked and proxy rotation disabled; failing fast. See artifacts under output/%s_*",
+                kind,
+                f"{kind}_captcha",
+            )
+            return False
 
-        logger.warning("All Turnstile solve attempts exhausted")
+        logger.error("%s blocked after %s attempts; failing fast", kind, max_attempts)
         return False
 
     def _random_delay(self) -> None:
@@ -237,11 +170,95 @@ class JobCollector:
         delay = random.uniform(min_delay, max_delay)
         time.sleep(delay)
 
+    def _apply_stealth_to_page(self, page: Page) -> None:
+        """Apply stealth patches to a page"""
+        if not self.config.use_stealth():
+            return
+        try:
+            from playwright_stealth.stealth import Stealth
+            Stealth().apply_stealth_sync(page)
+        except Exception as exc:
+            logger.debug("Failed to apply stealth to page: %s", exc)
+
+        try:
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
+                if (!window.chrome) window.chrome = {};
+                window.chrome.runtime = {};
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => {
+                        const plugins = [
+                            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                            { name: 'Native Client', filename: 'internal-nacl-plugin' }
+                        ];
+                        plugins.length = 3;
+                        return plugins;
+                    },
+                    configurable: true
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                    configurable: true
+                });
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+            """)
+        except Exception as exc:
+            logger.debug("Failed to add init scripts to page: %s", exc)
+
+    def _warmup_indeed(self) -> bool:
+        """Visit Indeed homepage to warm up session and bypass bot detection"""
+        try:
+            logger.info("Warming up Indeed session...")
+            if not self._goto_with_antibot(
+                "https://www.indeed.com", session_key=self._startup_session_key, kind="warmup"
+            ):
+                return False
+
+            # Long initial wait
+            time.sleep(random.uniform(3.0, 5.0))
+
+            # Check for CAPTCHA
+            captcha = self._is_captcha_page(self.page)
+            if captcha:
+                logger.warning("CAPTCHA detected on homepage warmup")
+                return False
+
+            # Simulate reading the page
+            for _ in range(random.randint(3, 5)):
+                x = random.randint(200, 1000)
+                y = random.randint(200, 600)
+                self.page.mouse.move(x, y)
+                time.sleep(random.uniform(0.2, 0.5))
+
+            # Random scroll
+            self.page.evaluate('window.scrollBy(0, Math.random() * 300)')
+            time.sleep(random.uniform(1.0, 2.0))
+
+            # Click on Find Jobs if visible
+            try:
+                find_jobs = self.page.query_selector("a[href*='jobs']")
+                if find_jobs:
+                    time.sleep(random.uniform(0.5, 1.0))
+            except Exception:
+                pass
+
+            logger.info("Indeed warmup completed")
+            return True
+        except Exception as exc:
+            logger.warning("Indeed warmup failed: %s", exc)
+            return False
+
     def _simulate_human_behavior(self) -> None:
         """Simulate human-like behavior to avoid bot detection"""
         try:
             # Initial delay to let page settle
-            time.sleep(random.uniform(2.0, 4.0))
+            time.sleep(random.uniform(3.0, 5.0))
 
             # Random mouse movements
             for _ in range(random.randint(2, 4)):
@@ -346,129 +363,36 @@ class JobCollector:
         except Exception:
             logger.debug("Captcha notification failed", exc_info=True)
 
-    def _handle_captcha_prompt(self, page: Page, url: str, *, fetch_kind: str) -> str:
-        """
-        Handle captcha detection during detail fetches.
-
-        Attempts auto-solve first if enabled and sitekey is present.
-        Falls back to policy (abort/skip/pause) if solve fails or isn't possible.
-
-        Returns: "solved", "retry", "skip", or "abort"
-        """
+    def _handle_captcha_prompt(self, url: str) -> str:
         self._log_captcha(url)
-
-        # Attempt auto-solve first
-        if self.config.is_captcha_auto_solve_enabled():
-            logger.info("Attempting captcha auto-solve for detail %s fetch", fetch_kind)
-            if self._attempt_turnstile_solve(page, url):
-                self.captcha_consecutive = 0
-                return "solved"
-            logger.info("Auto-solve failed or not possible; falling back to policy")
-
-        # Auto-solve not available or failed; apply policy
         self._notify_captcha()
-
-        policy = (self.config.get_captcha_on_detect() or "skip").strip().lower()
-        if policy not in ("abort", "skip", "pause"):
-            logger.warning("Invalid captcha policy %r; defaulting to 'skip'", policy)
-            policy = "skip"
-
-        is_tty = False
-        try:
-            is_tty = bool(sys.stdin.isatty())
-        except Exception:
-            is_tty = False
-
-        if policy == "pause":
-            if not is_tty:
-                logger.warning(
-                    "Captcha policy is pause but stdin is not interactive; skipping remaining detail fetches"
-                )
-                policy = "skip"
-            else:
-                print(f"\n⚠️  CAPTCHA detected during detail {fetch_kind} fetch.")
-                print("Solve the captcha in the browser window, then press ENTER to continue.")
+        if self._non_interactive():
+            logger.warning("Non-interactive run: skipping remaining detail fetches after captcha (%s)", url)
+            self.skip_detail_fetches = True
+            return "skip"
+        print("\n⚠️  CAPTCHA detected during detail salary fetch.")
+        print("Choose how to proceed:")
+        print("  1) Solve manually (pause and resume)")
+        print("  2) Abort run (save collected data)")
+        print("  3) Skip remaining detail fetches (continue without salaries)")
+        while True:
+            choice = input("Enter 1, 2, or 3: ").strip()
+            if choice == "1":
+                print("\nSolve the captcha in the browser window, then press ENTER to continue.")
                 input()
                 return "retry"
-
-        if policy == "abort":
-            print(
-                f"\nCollected {self.total_jobs_collected} jobs with "
-                f"{self.total_jobs_with_salary} salaries."
-            )
-            self.abort_requested = True
-            return "abort"
-
-        print(f"\nSkipping remaining detail fetches for this run (captcha policy={policy}).")
-        self.skip_detail_fetches = True
-        return "skip"
-
-
-    def _handle_search_captcha(self, page: Page, url: str) -> str:
-        """
-        Handle captcha detection during search navigation.
-
-        Attempts auto-solve first if enabled and sitekey is present.
-        Falls back to policy (abort/skip/pause) if solve fails or isn't possible.
-
-        Returns: "solved", "retry", "skip", or "abort"
-        """
-        # Attempt auto-solve first
-        if self.config.is_captcha_auto_solve_enabled():
-            logger.info("Attempting captcha auto-solve for search navigation")
-            if self._attempt_turnstile_solve(page, url):
-                return "solved"
-            logger.info("Auto-solve failed or not possible; falling back to policy")
-
-        # Auto-solve not available or failed; apply policy
-        self._notify_captcha()
-
-        policy = (self.config.get_captcha_on_detect() or "skip").strip().lower()
-        if policy not in ("abort", "skip", "pause"):
-            logger.warning("Invalid captcha policy %r; defaulting to 'skip'", policy)
-            policy = "skip"
-
-        is_tty = False
-        try:
-            is_tty = bool(sys.stdin.isatty())
-        except Exception:
-            is_tty = False
-
-        if policy == "pause":
-            if not is_tty:
-                logger.warning(
-                    "Captcha policy is pause but stdin is not interactive; skipping this search query"
+            if choice == "2":
+                print(
+                    f"\nCollected {self.total_jobs_collected} jobs with "
+                    f"{self.total_jobs_with_salary} salaries."
                 )
-                policy = "skip"
-            else:
-                print("\n⚠️  CAPTCHA detected during search navigation.")
-                print("Solve the captcha in the browser window, then press ENTER to retry.")
-                input()
-                return "retry"
-
-        if policy == "abort":
-            self.abort_requested = True
-            return "abort"
-
-        print("\nSkipping this search query due to captcha.")
-        return "skip"
-
-    def _save_search_debug_artifacts(self, page: 'Page', *, label: str) -> Optional[dict]:
-        try:
-            output_dir = REPO_ROOT / "output"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            stem = f"debug_search_{timestamp}"
-            if label:
-                stem = f"{stem}_{label}"
-            png_path = output_dir / f"{stem}.png"
-            html_path = output_dir / f"{stem}.html"
-            page.screenshot(path=str(png_path))
-            html_path.write_text(page.content(), encoding="utf-8")
-            return {"png": str(png_path), "html": str(html_path)}
-        except Exception:
-            logger.debug("Failed to save search debug artifacts", exc_info=True)
-            return None
+                self.abort_requested = True
+                return "abort"
+            if choice == "3":
+                print("\nSkipping remaining detail salary fetches for this run.")
+                self.skip_detail_fetches = True
+                return "skip"
+            print("Invalid choice. Please enter 1, 2, or 3.")
 
     def _captcha_backoff(self) -> None:
         if self.captcha_consecutive <= 0:
@@ -714,37 +638,14 @@ class JobCollector:
         except Exception:
             return None
 
-    def _get_canonical_url(self, url: str) -> str:
-        """
-        Convert Indeed tracking URLs to canonical viewjob URLs when possible.
-        Reduces Cloudflare triggers by avoiding redirect chains.
-        """
-        if not url:
-            return url
-        try:
-            parsed = urlparse(url)
-            query = parse_qs(parsed.query)
-            jk = query.get("jk", [None])[0]
-            if jk:
-                canonical = f"https://www.indeed.com/viewjob?jk={jk}"
-                if canonical != url:
-                    logger.debug("Canonicalized URL: %s -> %s", url, canonical)
-                return canonical
-        except Exception:
-            pass
-        return url
-
     def _fetch_detail_salary(self, url: str) -> tuple[Optional[str], Optional[str]]:
         if not self.context or not url:
             return None, None
-
-        fetch_url = self._get_canonical_url(url)
-
         if self.skip_detail_fetches:
             return None, None
 
-        if fetch_url in self.detail_salary_cache:
-            return self.detail_salary_cache[fetch_url]
+        if url in self.detail_salary_cache:
+            return self.detail_salary_cache[url]
 
         timeout_ms = self.config.get_detail_salary_timeout() * 1000
         retries = self.config.get_detail_salary_retries()
@@ -777,13 +678,16 @@ class JobCollector:
                     self.detail_salary_page = None
                 if self.detail_salary_page is None:
                     self.detail_salary_page = self.context.new_page()
+                    self._apply_stealth_to_page(self.detail_salary_page)
                     self.detail_salary_page.set_default_timeout(timeout_ms)
                     self.detail_salary_page.set_default_navigation_timeout(timeout_ms)
                 detail_page = self.detail_salary_page
                 if delay_max > 0:
                     delay_seconds = random.uniform(delay_min, delay_max)
                     time.sleep(delay_seconds)
-                detail_page.goto(fetch_url, wait_until="domcontentloaded")
+                detail_page.goto(url, wait_until="domcontentloaded")
+                # Wait for page to settle before interacting
+                time.sleep(random.uniform(1.5, 3.0))
                 try:
                     detail_page.wait_for_url("**/viewjob?jk=**", timeout=3000)
                 except Exception:
@@ -804,6 +708,8 @@ class JobCollector:
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
                     self.captcha_consecutive += 1
+                    self.metrics.inc("captcha_encounters")
+                    self.metrics.inc("blocked_pages")
                     logger.warning(
                         "Detail salary fetch blocked by captcha (reason=%s, title=%s, url=%s)",
                         captcha_detection["reason"],
@@ -822,18 +728,38 @@ class JobCollector:
                             self.captcha_debug_saved = True
                         except Exception:
                             pass
-                    action = self._handle_captcha_prompt(detail_page, fetch_url, fetch_kind="salary")
-                    if action == "abort":
-                        raise CaptchaAbort("User requested abort after captcha")
-                    if action == "skip":
-                        return None, None
-                    if action in ("retry", "solved"):
-                        # solved = captcha cleared, continue extraction on same page
-                        # retry = user manually solved, re-navigate
+                    solved = False
+                    if self.solver.available():
+                        ok, solve_reason = self.solver.solve_if_present(detail_page, detection=captcha_detection)
+                        if ok:
+                            solved = True
+                            self.metrics.inc("captcha_solved")
+                            self.proxy_mgr.record_captcha(session_key=f"indeed:{self.current_query or 'details'}", solved=True)
+                            self.captcha_consecutive = 0
+                        else:
+                            self.metrics.inc("solver_failures")
+                            logger.info("Detail salary solve attempt failed (%s)", solve_reason)
+                    if not solved:
+                        self.proxy_mgr.record_captcha(session_key=f"indeed:{self.current_query or 'details'}", solved=False)
+                    if solved:
+                        # Re-check after solve, then proceed with extraction
+                        try:
+                            detail_page.wait_for_load_state("domcontentloaded", timeout=8000)
+                        except Exception:
+                            pass
+                        if self._is_captcha_page(detail_page):
+                            solved = False
+
+                    if not solved:
+                        action = self._handle_captcha_prompt(url)
+                        if action == "abort":
+                            raise CaptchaAbort("User requested abort after captcha")
+                        if action == "skip":
+                            return None, None
                         if action == "retry":
                             self.detail_salary_page = None
                             attempt = max(attempt - 1, 0)
-                        continue
+                            continue
                 else:
                     self.captcha_consecutive = 0
 
@@ -869,21 +795,13 @@ class JobCollector:
                 if not salary and not self.detail_debug_saved:
                     try:
                         Path("output").mkdir(parents=True, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        png_path = f"output/detail_debug_{timestamp}.png"
-                        html_path = f"output/detail_debug_{timestamp}.html"
-                        detail_page.screenshot(path=png_path)
-                        Path(html_path).write_text(
+                        detail_page.screenshot(path="output/detail_debug.png")
+                        Path("output/detail_debug.html").write_text(
                             detail_page.content(), encoding="utf-8"
-                        )
-                        logger.warning(
-                            "No salary found on detail page (selector drift likely); "
-                            "saved debug artifacts: %s, %s",
-                            png_path, html_path,
                         )
                         self.detail_debug_saved = True
                     except Exception:
-                        logger.debug("Failed to save detail debug artifacts", exc_info=True)
+                        pass
 
                 if salary or job_type:
                     break
@@ -896,7 +814,7 @@ class JobCollector:
                 logger.warning("Detail salary fetch failed (attempt %s/%s): %s", attempt, retries, exc)
                 self._random_delay()
 
-        self.detail_salary_cache[fetch_url] = (salary, job_type)
+        self.detail_salary_cache[url] = (salary, job_type)
         return salary, job_type
 
     def _fetch_detail_description(self, url: str) -> Optional[str]:
@@ -929,12 +847,14 @@ class JobCollector:
                     self.detail_description_page = None
                 if self.detail_description_page is None:
                     self.detail_description_page = self.context.new_page()
+                    self._apply_stealth_to_page(self.detail_description_page)
                     self.detail_description_page.set_default_timeout(timeout_ms)
                     self.detail_description_page.set_default_navigation_timeout(timeout_ms)
                 detail_page = self.detail_description_page
                 if delay_max > 0:
                     time.sleep(random.uniform(delay_min, delay_max))
                 detail_page.goto(url, wait_until="domcontentloaded")
+                time.sleep(random.uniform(1.5, 3.0))
                 try:
                     detail_page.wait_for_selector(", ".join(selectors), timeout=3000)
                 except Exception:
@@ -942,6 +862,8 @@ class JobCollector:
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
                     self.captcha_consecutive += 1
+                    self.metrics.inc("captcha_encounters")
+                    self.metrics.inc("blocked_pages")
                     logger.warning(
                         "Detail description fetch blocked by captcha (reason=%s, title=%s, url=%s)",
                         captcha_detection["reason"],
@@ -949,16 +871,38 @@ class JobCollector:
                         captcha_detection["url"],
                     )
                     self._captcha_backoff()
-                    action = self._handle_captcha_prompt(detail_page, url, fetch_kind="description")
-                    if action == "abort":
-                        raise CaptchaAbort("User requested abort after captcha")
-                    if action == "skip":
-                        return None
-                    if action in ("retry", "solved"):
+                    solved = False
+                    if self.solver.available():
+                        ok, solve_reason = self.solver.solve_if_present(detail_page, detection=captcha_detection)
+                        if ok:
+                            solved = True
+                            self.metrics.inc("captcha_solved")
+                            self.proxy_mgr.record_captcha(session_key=f"indeed:{self.current_query or 'details'}", solved=True)
+                            self.captcha_consecutive = 0
+                        else:
+                            self.metrics.inc("solver_failures")
+                            logger.info("Detail description solve attempt failed (%s)", solve_reason)
+                    if not solved:
+                        self.proxy_mgr.record_captcha(session_key=f"indeed:{self.current_query or 'details'}", solved=False)
+
+                    if solved:
+                        try:
+                            detail_page.wait_for_load_state("domcontentloaded", timeout=8000)
+                        except Exception:
+                            pass
+                        if self._is_captcha_page(detail_page):
+                            solved = False
+
+                    if not solved:
+                        action = self._handle_captcha_prompt(url)
+                        if action == "abort":
+                            raise CaptchaAbort("User requested abort after captcha")
+                        if action == "skip":
+                            return None
                         if action == "retry":
                             self.detail_description_page = None
                             attempt = max(attempt - 1, 0)
-                        continue
+                            continue
                 else:
                     self.captcha_consecutive = 0
 
@@ -971,21 +915,13 @@ class JobCollector:
                 if not description and not self.detail_description_debug_saved:
                     try:
                         Path("output").mkdir(parents=True, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        png_path = f"output/detail_description_debug_{timestamp}.png"
-                        html_path = f"output/detail_description_debug_{timestamp}.html"
-                        detail_page.screenshot(path=png_path)
-                        Path(html_path).write_text(
+                        detail_page.screenshot(path="output/detail_description_debug.png")
+                        Path("output/detail_description_debug.html").write_text(
                             detail_page.content(), encoding="utf-8"
-                        )
-                        logger.warning(
-                            "No description found on detail page (selector drift likely); "
-                            "saved debug artifacts: %s, %s",
-                            png_path, html_path,
                         )
                         self.detail_description_debug_saved = True
                     except Exception:
-                        logger.debug("Failed to save detail description debug artifacts", exc_info=True)
+                        pass
 
                 if description:
                     break
@@ -1036,35 +972,24 @@ class JobCollector:
             return True
         return False
 
-    def start_browser(self) -> None:
+    def start_browser(self, *, session_key: Optional[str] = None) -> None:
         """Initialize Playwright browser with persistent profile"""
         logger.info("Starting browser...")
-        self.playwright = sync_playwright().start()
+        if self.config.use_undetected():
+            try:
+                from rebrowser_playwright.sync_api import sync_playwright as rebrowser_sync_playwright
+                self.playwright = rebrowser_sync_playwright().start()
+                logger.info("Using rebrowser-playwright for undetected mode")
+            except Exception as exc:
+                logger.warning("Failed to start rebrowser-playwright, falling back to Playwright: %s", exc)
+                self.playwright = sync_playwright().start()
+        else:
+            self.playwright = sync_playwright().start()
         channel = self.config.get_browser_channel() or None
         executable_path = self.config.get_browser_executable_path() or None
         launch_timeout = self.config.get_launch_timeout()
-        proxy = None
-
-        def _looks_like_proxy_failure(message: str) -> bool:
-            msg = (message or "").lower()
-            markers = (
-                "err_proxy_connection_failed",
-                "err_tunnel_connection_failed",
-                "proxy authentication",
-                "authentication required",
-                "proxy",
-                "407",
-            )
-            return any(marker in msg for marker in markers)
-
-        try:
-            proxy = self.config.get_playwright_proxy()
-        except Exception as exc:
-            logger.error("Proxy configuration error: %s", exc)
-            raise
-
-        if proxy:
-            logger.info("Proxy enabled: %s", proxy.get("server"))
+        session_key = session_key or f"indeed:{self.current_query or 'startup'}"
+        proxy = self.proxy_mgr.get_proxy(session_key)
 
         if executable_path and not Path(executable_path).exists():
             logger.warning("Browser executable not found: %s", executable_path)
@@ -1108,7 +1033,7 @@ class JobCollector:
         # Check if persistent profile exists (preferred method)
         if self.user_data_dir.exists():
             logger.info(f"Using persistent profile: {self.user_data_dir}")
-            launch_kwargs = dict(
+            self.context = self.playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.user_data_dir),
                 headless=self.config.is_headless(),
                 viewport={"width": 1920, "height": 1080},
@@ -1119,64 +1044,38 @@ class JobCollector:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                 locale="en-US",
                 timezone_id="America/New_York",
+                proxy=proxy,
             )
-            if proxy:
-                launch_kwargs["proxy"] = proxy
-            try:
-                self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)
-            except Exception as exc:
-                if proxy and _looks_like_proxy_failure(str(exc)):
-                    logger.error(
-                        "Proxy connection/auth failed for %s. Check credentials and connectivity.",
-                        proxy.get("server"),
-                    )
-                raise
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         else:
             # Fallback to session file or new context
             logger.info("No persistent profile found, using regular context")
-            launch_kwargs = dict(
+            self.browser = self.playwright.chromium.launch(
                 headless=self.config.is_headless(),
                 args=stealth_args,
                 channel=channel,
                 executable_path=executable_path,
                 timeout=launch_timeout,
+                proxy=proxy,
             )
-            if proxy:
-                launch_kwargs["proxy"] = proxy
-            try:
-                self.browser = self.playwright.chromium.launch(**launch_kwargs)
-            except Exception as exc:
-                if proxy and _looks_like_proxy_failure(str(exc)):
-                    logger.error(
-                        "Proxy connection/auth failed for %s. Check credentials and connectivity.",
-                        proxy.get("server"),
-                    )
-                raise
 
             if self.session_file.exists():
                 logger.info(f"Loading session from {self.session_file}")
-                context_kwargs = dict(
+                self.context = self.browser.new_context(
                     storage_state=str(self.session_file),
                     viewport={"width": 1920, "height": 1080},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                     locale="en-US",
                     timezone_id="America/New_York",
                 )
-                if proxy:
-                    context_kwargs["proxy"] = proxy
-                self.context = self.browser.new_context(**context_kwargs)
             else:
                 logger.warning("No session found - run setup_session.py first!")
-                context_kwargs = dict(
+                self.context = self.browser.new_context(
                     viewport={"width": 1920, "height": 1080},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                     locale="en-US",
                     timezone_id="America/New_York",
                 )
-                if proxy:
-                    context_kwargs["proxy"] = proxy
-                self.context = self.browser.new_context(**context_kwargs)
 
             self.page = self.context.new_page()
 
@@ -1272,6 +1171,12 @@ class JobCollector:
                 self.playwright.stop()
         except Exception:
             logger.debug("Playwright stop failed", exc_info=True)
+        self.detail_salary_page = None
+        self.detail_description_page = None
+        self.page = None
+        self.context = None
+        self.browser = None
+        self.playwright = None
         logger.info("Browser closed")
 
     def collect_jobs(self, query: SearchQuery) -> List[Job]:
@@ -1309,40 +1214,10 @@ class JobCollector:
 
             try:
                 # Navigate to search results
-                if not self._safe_goto(url):
-                    logger.warning("Failed to load search page after retries")
-                    print("   ✗ Failed to load search page")
+                session_key = f"indeed:{self.current_query or 'search'}"
+                if not self._goto_with_antibot(url, session_key=session_key, kind="search"):
+                    print("   ✗ Search page blocked (see output/*search_captcha*)")
                     break
-
-
-                captcha_detection = self._is_captcha_page(self.page)
-                if captcha_detection:
-                    artifacts = self._save_search_debug_artifacts(self.page, label="captcha")
-                    logger.warning(
-                        "Search page blocked by captcha (reason=%s, title=%s, url=%s, artifacts=%s)",
-                        captcha_detection["reason"],
-                        captcha_detection["title"],
-                        captcha_detection["url"],
-                        artifacts,
-                    )
-                    action = self._handle_search_captcha(self.page, url)
-                    logger.warning(
-                        "Search captcha action=%s (query=%s, page=%s, url=%s)",
-                        action,
-                        query,
-                        page_index + 1,
-                        url,
-                    )
-                    if action == "abort":
-                        raise CaptchaAbort("User requested abort after captcha")
-                    if action == "skip":
-                        break
-                    if action in ("retry", "solved"):
-                        # solved = captcha auto-cleared, proceed to extraction
-                        # retry = user manually solved, continue loop to re-check
-                        if action == "retry":
-                            continue
-                        # For solved, fall through to extraction
 
                 # Simulate human behavior before interacting with page
                 self._simulate_human_behavior()
@@ -1369,36 +1244,10 @@ class JobCollector:
                         continue
 
                 if not job_cards:
-                    # Check if page is blocked by captcha
-                    captcha_detection = self._is_captcha_page(self.page)
-                    if captcha_detection:
-                        artifacts = self._save_search_debug_artifacts(self.page, label="captcha")
-                        logger.warning(
-                            "Search page blocked by captcha after selector failures (reason=%s, title=%s, url=%s, artifacts=%s)",
-                            captcha_detection["reason"],
-                            captcha_detection["title"],
-                            captcha_detection["url"],
-                            artifacts,
-                        )
-                        action = self._handle_search_captcha(self.page, url)
-                        logger.warning(
-                            "Search captcha action=%s (query=%s, page=%s, url=%s)",
-                            action, query, page_index + 1, url,
-                        )
-                        if action == "abort":
-                            raise CaptchaAbort("User requested abort after captcha")
-                        if action == "skip":
-                            break
-                        if action in ("retry", "solved"):
-                            continue
-
-                    # No captcha but selectors failed - save debug artifacts
-                    artifacts = self._save_search_debug_artifacts(self.page, label="no_job_cards")
-                    logger.warning(
-                        "No job cards found with any selector (query=%s, page=%s, url=%s, artifacts=%s, selectors=%s)",
-                        query, page_index + 1, url, artifacts, selectors,
-                    )
-                    print("   ⚠️  No job cards found - saved debug screenshot + HTML")
+                    # Debug: save screenshot and HTML
+                    self.page.screenshot(path="output/debug_screenshot.png")
+                    logger.warning("No job cards found with any selector")
+                    print("   ⚠️  No job cards found - saved debug screenshot")
                     break
 
                 try:
@@ -1604,6 +1453,11 @@ class JobCollector:
         try:
             self.start_browser()
 
+            # Warmup Indeed session to bypass bot detection
+            if not self._warmup_indeed():
+                logger.warning("Indeed warmup failed - bot detection likely active")
+                print("⚠️  Indeed warmup failed - bot detection may be active")
+
             for query in queries:
                 try:
                     jobs = self.collect_jobs(query)
@@ -1628,6 +1482,18 @@ class JobCollector:
             if str(job.link) not in seen_links:
                 seen_links.add(str(job.link))
                 unique_jobs.append(job)
+
+        self.metrics.set_gauge("jobs_total_collected", self.total_jobs_collected)
+        self.metrics.set_gauge("jobs_unique_collected", len(unique_jobs))
+        self.metrics.set_gauge("jobs_with_salary", self.total_jobs_with_salary)
+        self.metrics.finish()
+        metrics_path = Path("output") / f"run_metrics_{self.metrics.run_id}.json"
+        try:
+            self.metrics.write_json(metrics_path)
+            logger.info("Run metrics summary: %s", json.dumps(self.metrics.to_dict(), sort_keys=True))
+            print(f"📈 Run metrics: {metrics_path}")
+        except Exception:
+            logger.exception("Failed to write run metrics")
 
         print(f"\n📊 Total: {len(unique_jobs)} unique jobs collected")
         if self.first_captcha_fetch_count is not None:
