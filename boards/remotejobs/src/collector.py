@@ -42,6 +42,7 @@ class DetailPageData:
     job_type: Optional[str] = None
     company: Optional[str] = None
     description: Optional[str] = None
+    date_posted: Optional[str] = None
 
 
 class JobCollector:
@@ -847,18 +848,18 @@ class JobCollector:
                         pass
 
                 try:
-                    detail_page.wait_for_selector(
-                        ", ".join(detail_section_selectors), timeout=3000
-                    )
+                    wait_timeout = 1500 if job_board == "remotejobs" else 3000
+                    detail_page.wait_for_selector(", ".join(detail_section_selectors), timeout=wait_timeout)
                 except Exception:
                     pass
 
-                for selector in salary_selectors + detail_section_selectors:
-                    try:
-                        detail_page.wait_for_selector(selector, timeout=2000)
-                        break
-                    except Exception:
-                        continue
+                if job_board != "remotejobs":
+                    for selector in salary_selectors + detail_section_selectors:
+                        try:
+                            detail_page.wait_for_selector(selector, timeout=2000)
+                            break
+                        except Exception:
+                            continue
 
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
