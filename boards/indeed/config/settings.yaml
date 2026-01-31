@@ -39,12 +39,12 @@ output:
 browser:
   # Indeed is frequently hostile to headless automation; run headed under Xvfb for baseline tests.
   headless: false
-  min_delay: 1.0
-  max_delay: 3.0
-  page_timeout: 15
-  navigation_timeout: 20
-  launch_timeout: 30
-  max_retries: 2
+  min_delay: 2.0
+  max_delay: 5.0
+  page_timeout: 30
+  navigation_timeout: 30
+  launch_timeout: 45
+  max_retries: 3
   channel: ''
   executable_path: ''
   use_stealth: true
@@ -165,3 +165,13 @@ captcha:
   max_retries: 2
   backoff_base_seconds: 60
   backoff_max_seconds: 300
+
+cloudflare:
+  enabled: true
+  session_persistence: true
+  turnstile_solving: true
+  min_delay_between_queries: 5.0
+  max_delay_between_queries: 15.0
+  warmup_delay: 3.0
+  jitter_factor: 0.3
+  flaresolverr_url: ""
