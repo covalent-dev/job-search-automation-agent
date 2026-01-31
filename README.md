@@ -1,59 +1,116 @@
-# Job Search Automation Agent v0.2.0
+# Job Search Automation Agent v0.2.1
 
-Scrapes jobs from multiple boards, scores them with a local LLM, and syncs everything to Obsidian. Currently supports Indeed, Glassdoor, LinkedIn, RemoteJobs, and RemoteAfrica.
+Scrapes jobs from multiple boards with proxy/captcha support, scores them with a local LLM, and syncs everything to Obsidian. Supports Indeed, Glassdoor, LinkedIn, RemoteJobs, and RemoteAfrica.
 
 ## Quick Start
 
 ```bash
 # Run a specific board
-./scripts/run_board.sh glassdoor
+cd boards/remotejobs
+python -m src.collector
 
-# Run with custom config
-./scripts/run_board.sh indeed config/settings.headless.yaml
+# With options
+python -m src.collector --max-jobs 25 --headless
 
-# Post-run AI scoring (after collection)
-cd boards/glassdoor
-python3 ../../shared/post_run_sorter.py --latest
+# Or via script
+./scripts/run_board.sh remotejobs
 ```
+
+## Board Status (as of 2026-01-30)
+
+| Board | Headless | Proxy | Captcha | Descriptions | Dedupe | Status |
+|-------|----------|-------|---------|--------------|--------|--------|
+| RemoteJobs | ⚠️ Cloudflare | ✅ | N/A | ✅ 100% | ✅ slug | Working (headed) |
+| RemoteAfrica | ✅ | ✅ | N/A | ✅ | ✅ slug | **Fully Working** |
+| LinkedIn | ⚠️ | ✅ | ✅ reCAPTCHA | Partial | ✅ external_id | Working with proxy |
+| Indeed | ❌ Cloudflare | ✅ | ✅ Turnstile | ❌ | ✅ jk | Needs stealth |
+| Glassdoor | ❌ Cloudflare | ✅ | ✅ Turnstile | ❌ | ✅ URL | Needs stealth |
+
+**Legend:**
+- ✅ = Working
+- ⚠️ = Works with workarounds
+- ❌ = Blocked (Cloudflare detection)
 
 ## Structure
 
 ```
-job-search-automation/
+job-search-automation-agent/
 ├── boards/              # Board-specific collectors and configs
 │   ├── indeed/
 │   ├── glassdoor/
 │   ├── linkedin/
 │   ├── remotejobs/
 │   └── remoteafrica/
-├── shared/              # Shared core (AI scorer, models, output writer)
+├── shared/              # Shared core
+│   ├── captcha_solver.py    # 2captcha integration
+│   ├── config_loader.py     # Config with proxy/captcha support
+│   ├── dedupe_store.py      # Cross-run deduplication
+│   ├── ai_scorer.py         # Ollama LLM scoring
+│   └── output_writer.py     # JSON/MD + Obsidian sync
 ├── scripts/             # Run scripts
 └── requirements.txt
 ```
 
-## What It Does
+## Infrastructure
 
-This is a monorepo that handles scraping from 5 different job boards. Each board gets its own isolated browser profile to avoid session conflicts. Jobs get scored by a local LLM running through Ollama, and everything syncs to an Obsidian vault for easy review.
+### Proxy (IPRoyal)
+```bash
+# Set env vars
+export IPROYAL_USER="..."
+export IPROYAL_PASS="..."
+export IPROYAL_HOST="geo.iproyal.com"
+export IPROYAL_PORT="12321"
+```
 
-Salary extraction uses board-specific selectors since every site structures their data differently. The filtering happens in two stages: first with rule-based keywords, then with AI scoring to rank what's actually relevant.
+Enable in board config:
+```yaml
+proxy:
+  enabled: true
+```
 
-The architecture is designed to scale to 30+ boards without turning into a maintenance nightmare.
+### Captcha Solver (2captcha)
+```bash
+export CAPTCHA_API_KEY="..."
+```
+
+Enable in board config:
+```yaml
+captcha:
+  enabled: true
+  policy: solve  # skip | abort | pause | solve
+```
+
+### Stealth Mode
+Both Indeed and Glassdoor collectors have built-in stealth infrastructure:
+- Browser fingerprint spoofing
+- navigator.webdriver override
+- Human-like behavior simulation
+- playwright-stealth integration
+
+Enable in config:
+```yaml
+browser:
+  use_stealth: true
+```
 
 ## Setup
 
 ```bash
 # 1. Install dependencies
 pip install -r requirements.txt
-
-# 2. Install Playwright browsers
 playwright install chromium
 
-# 3. First-time captcha setup (per board)
-cd boards/glassdoor
-python3 ../../shared/setup_session.py
+# 2. Set env vars (create .env or export)
+export IPROYAL_USER="..."
+export CAPTCHA_API_KEY="..."
+
+# 3. First-time browser profile setup (per board)
+export JOB_BOT_BOARD="linkedin"
+python3 shared/setup_session.py
 
 # 4. Run collection
-./scripts/run_board.sh glassdoor
+cd boards/linkedin
+python -m src.collector
 ```
 
 ## Configuration
@@ -64,57 +121,65 @@ Each board has `config/settings.yaml`:
 search:
   keywords:
     - "AI engineer"
-    - "machine learning engineer"
+    - "python developer"
   location: "Remote"
   max_results_per_search: 50
-  detail_salary_fetch: true
-  detail_description_fetch: false
+  max_pages: 10
 
-ai_filter:
+browser:
+  headless: true
+  use_stealth: true
+
+proxy:
   enabled: true
-  model: "deepseek-coder-v2:latest"
 
-post_run:
-  exclude_keywords:
-    - "therapist"
-    - "nurse"
-    # Note: Don't add "senior", "staff", "principal" here - kills 90% of good matches
+captcha:
+  enabled: true
+  policy: solve
+
+output:
+  vault_sync:
+    enabled: true
+    vault_path: ~/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/linkedin
 ```
 
-## Quick Board Setup
+## Deduplication
 
-Copy an existing board directory, update the config with your search keywords and location, then implement the site-specific selectors in `collector.py`. Test with `./scripts/run_board.sh <boardname>` on a small sample before running full collection.
+Cross-run dedupe prevents re-collecting the same jobs:
+- **LinkedIn**: `external_id` (LinkedIn job ID)
+- **Indeed**: `jk` (Indeed job key)
+- **Glassdoor**: URL hash
+- **RemoteJobs**: slug from URL
+- **RemoteAfrica**: slug from URL
+
+Dedupe files: `~/.job-search-automation/dedupe/<board>_seen.json`
 
 ## Output
 
 - **JSON**: `boards/<board>/output/jobs_TIMESTAMP.json`
 - **Markdown**: `boards/<board>/output/jobs_TIMESTAMP.md`
-- **Obsidian**: `~/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/<board>/`
+- **Obsidian**: Auto-synced if `vault_sync.enabled: true`
 
-## How It Works
+## Post-Run AI Scoring
 
-The `shared/` directory contains all the common code - AI scoring, data models, output writing, etc. Each board in `boards/` only needs to implement its own `collector.py` with site-specific selectors. Everything else is shared.
+```bash
+cd boards/remotejobs
+python3 ../../shared/post_run_sorter.py --latest --min-score 5
+```
 
-The scraper uses Playwright for browser automation and handles all the usual annoyances (captchas, rate limits, session management). When you run a board, it collects jobs, scores them with the local LLM, filters out noise, and exports both JSON and Markdown.
+Options:
+- `--latest` — Use most recent output file
+- `--min-score N` — Filter to jobs scored N+
+- `--top-n N` — Keep top N jobs only
 
-## Adding a New Board
+## Architecture Notes
 
-Before you enable salary or description scraping for a new board, you need to do recon. Job sites have multiple layout variations (different HTML structures for the same data), so you can't just guess at selectors.
+- Monorepo design scales to 30+ boards
+- Each board isolates browser profile and config
+- Shared code handles common logic (AI, output, dedupe)
+- Collectors only implement site-specific selectors
+- Playwright for browser automation with stealth patches
 
-The process: identify each layout case, document the HTML structure with screenshots, implement selectors that cover all cases, then test on a small sample. Once you hit 90%+ coverage, enable it in the config. Otherwise you'll just be debugging broken selectors constantly.
+---
 
-Check the recon workflow doc for the full breakdown.
-
-## Status
-
-| Board | Salary | Descriptions | AI Scoring | Status |
-|-------|--------|--------------|------------|---------|
-| Indeed | ✅ | ❌ | ✅ | Working |
-| Glassdoor | ✅ | ❌ | ✅ | Working (perfect salary coverage) |
-| LinkedIn | ✅ | ❌ | ✅ | Working |
-| RemoteJobs | ✅ | ✅ | ✅ | Working (with descriptions) |
-| RemoteAfrica | ✅ | ❌ | ✅ | Working |
-
-## Version
-
-v0.2.0 - Monorepo structure with 5 boards
+*Updated: 2026-01-30 | v0.2.1 — Proxy, Captcha, Dedupe infrastructure*
