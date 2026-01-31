@@ -68,6 +68,43 @@ def _format_board_label(config: ConfigLoader) -> str:
     primary = boards[0] if boards else "jobs"
     return primary.replace("-", " ").replace("_", " ").title()
 
+def _escape_md_cell(value: str) -> str:
+    return (value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _summarize_location_cell(location: str, max_items: int = 8) -> str:
+    text = (location or "").strip()
+    if "," not in text:
+        return text
+    parts = [p.strip() for p in text.split(",") if p and p.strip()]
+    if len(parts) <= max_items:
+        return text
+    shown = ", ".join(parts[:max_items])
+    return f"{shown} +{len(parts) - max_items} more"
+
+
+def _job_meta_table(job: Job, include_ai: bool) -> list[str]:
+    salary = job.salary or "-"
+    posted = str(job.date_posted) if job.date_posted else "-"
+    ai = f"{job.ai_score}/10" if job.ai_score is not None else "-"
+
+    header_cols = ["Company", "Location", "Source", "Salary", "Posted"]
+    row_cols = [
+        _escape_md_cell(job.company or "-"),
+        _escape_md_cell(_summarize_location_cell(job.location or "-")),
+        _escape_md_cell(job.source or "-"),
+        _escape_md_cell(salary),
+        _escape_md_cell(posted),
+    ]
+    if include_ai:
+        header_cols.append("AI")
+        row_cols.append(_escape_md_cell(ai))
+
+    header = "| " + " | ".join(header_cols) + " |"
+    separator = "| " + " | ".join(["---"] * len(header_cols)) + " |"
+    row = "| " + " | ".join(row_cols) + " |"
+    return [header, separator, row, ""]
+
 
 def _write_outputs(config: ConfigLoader, jobs: List[Job], queries: List[SearchQuery], summary: dict) -> dict:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -95,18 +132,11 @@ def _write_outputs(config: ConfigLoader, jobs: List[Job], queries: List[SearchQu
         "## Ranked Listings\n",
     ]
 
+    include_ai = any(job.ai_score is not None for job in jobs)
     for i, job in enumerate(jobs, 1):
         lines.append(f"### {i}. {job.title}\n")
-        lines.append(f"**Company:** {job.company}  ")
-        lines.append(f"**Location:** {job.location}  ")
-        lines.append(f"**Source:** {job.source}  ")
-        if job.salary:
-            lines.append(f"**Salary:** {job.salary}  ")
-        if job.date_posted:
-            lines.append(f"**Posted:** {job.date_posted}  ")
-        if job.ai_score is not None:
-            lines.append(f"**AI Score:** {job.ai_score}/10  ")
-        lines.append(f"\n**Link:** [{job.title}]({job.link})\n")
+        lines.extend(_job_meta_table(job, include_ai=include_ai))
+        lines.append(f"**Link:** [{job.title}]({job.link})\n")
         if job.description:
             lines.append(f"> {job.description[:300]}{'...' if len(job.description) > 300 else ''}\n")
         if job.ai_reasoning:
@@ -202,12 +232,10 @@ def main() -> None:
 
         filtered.append(job)
 
-    ai_scored = 0
     if not args.no_ai and config.is_ai_enabled():
         scorer = AIScorer(config)
         if scorer.available:
             scorer.score_jobs(filtered)
-            ai_scored = sum(1 for job in filtered if job.ai_score is not None)
     if min_score > 0:
         filtered = [job for job in filtered if job.ai_score is not None and job.ai_score >= min_score]
 
@@ -218,7 +246,7 @@ def main() -> None:
     summary = {
         "input_total": len(jobs),
         "filtered_out": filtered_out,
-        "ai_scored": ai_scored,
+        "ai_scored": sum(1 for job in filtered if job.ai_score is not None),
     }
 
     _write_outputs(config, filtered, results.queries, summary)

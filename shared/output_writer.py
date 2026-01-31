@@ -20,6 +20,53 @@ class OutputWriter:
     def __init__(self, config):
         self.config = config
 
+    def _escape_md_cell(self, value: str) -> str:
+        return (value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+    def _summarize_location_cell(self, location: str, max_items: int = 8) -> str:
+        """
+        Make long comma-separated location lists more readable in markdown tables.
+
+        Example:
+          "AL, AZ, CA, CO, ... WI" -> "AL, AZ, CA, CO, CT, FL, GA, ID +17 more"
+        """
+        text = (location or "").strip()
+        if "," not in text:
+            return text
+        parts = [p.strip() for p in text.split(",") if p and p.strip()]
+        if len(parts) <= max_items:
+            return text
+        shown = ", ".join(parts[:max_items])
+        return f"{shown} +{len(parts) - max_items} more"
+
+    def _job_meta_table(self, job: Job, include_rating: bool, include_ai: bool) -> list[str]:
+        salary = job.salary or "-"
+        job_type = job.job_type if job.job_type and "remote" in (job.location or "").lower() else "-"
+        posted = str(job.date_posted) if job.date_posted else "-"
+        rating = f"{job.company_rating:.1f}/5" if job.company_rating is not None else "-"
+        ai = f"{job.ai_score}/10" if job.ai_score is not None else "-"
+
+        header_cols = ["Company", "Location", "Source", "Salary", "Job Type", "Posted"]
+        row_cols = [
+            self._escape_md_cell(job.company or "-"),
+            self._escape_md_cell(self._summarize_location_cell(job.location or "-")),
+            self._escape_md_cell(job.source or "-"),
+            self._escape_md_cell(salary),
+            self._escape_md_cell(job_type),
+            self._escape_md_cell(posted),
+        ]
+        if include_rating:
+            header_cols.append("Rating")
+            row_cols.append(self._escape_md_cell(rating))
+        if include_ai:
+            header_cols.append("AI")
+            row_cols.append(self._escape_md_cell(ai))
+
+        header = "| " + " | ".join(header_cols) + " |"
+        separator = "| " + " | ".join(["---"] * len(header_cols)) + " |"
+        row = "| " + " | ".join(row_cols) + " |"
+        return [header, separator, row, ""]
+
     def _format_board_label(self) -> str:
         boards = self.config.get_job_boards()
         primary = boards[0] if boards else "jobs"
@@ -86,39 +133,30 @@ class OutputWriter:
         if not jobs:
             lines.append("*No jobs found.*\n")
         else:
+            show_ai = any(job.ai_score is not None for job in jobs)
+            show_rating = any(job.company_rating is not None for job in jobs)
             for i, job in enumerate(jobs, 1):
                 lines.append(f"### {i}. {job.title}\n")
-                lines.append(f"**Company:** {job.company}  ")
-                lines.append(f"**Location:** {job.location}  ")
-                lines.append(f"**Source:** {job.source}  ")
-                if job.salary:
-                    lines.append(f"**Salary:** {job.salary}  ")
-                if job.job_type and "remote" in job.location.lower():
-                    lines.append(f"**Job Type:** {job.job_type}  ")
-                # Show company rating for Glassdoor jobs
-                if job.company_rating is not None:
-                    rating_str = f"⭐ {job.company_rating:.1f}/5"
+                lines.extend(self._job_meta_table(job, include_rating=show_rating, include_ai=show_ai))
+
+                # Extra details not shown in the grid
+                if job.source == "glassdoor":
                     if job.company_review_count:
-                        rating_str += f" ({job.company_review_count:,} reviews)"
-                    lines.append(f"**Rating:** {rating_str}  ")
-                if job.company_recommend_pct is not None:
-                    lines.append(f"**Recommend:** {job.company_recommend_pct}%  ")
-                # Show geo restriction for RemoteAfrica jobs
+                        lines.append(f"**Reviews:** {job.company_review_count:,}  ")
+                    if job.company_recommend_pct is not None:
+                        lines.append(f"**Recommend:** {job.company_recommend_pct}%  ")
                 if job.source == "remoteafrica":
                     if job.applicant_location_requirements:
-                        reqs = job.applicant_location_requirements[:5]
-                        extra = len(job.applicant_location_requirements) - 5
+                        reqs = job.applicant_location_requirements[:6]
+                        extra = len(job.applicant_location_requirements) - len(reqs)
                         geo_str = ", ".join(reqs)
                         if extra > 0:
                             geo_str += f" +{extra} more"
                         lines.append(f"**Geo Restriction:** {geo_str}  ")
                     if job.job_location_type:
                         lines.append(f"**Location Type:** {job.job_location_type}  ")
-                if job.date_posted:
-                    lines.append(f"**Posted:** {job.date_posted}  ")
-                if job.ai_score is not None:
-                    lines.append(f"**AI Score:** {job.ai_score}/10  ")
-                lines.append(f"\n**Link:** [{job.title}]({job.link})\n")
+
+                lines.append(f"**Link:** [{job.title}]({job.link})\n")
                 if job.description:
                     lines.append(f"> {job.description[:300]}{'...' if len(job.description) > 300 else ''}\n")
                 if job.ai_reasoning:
