@@ -101,6 +101,26 @@ class JobCollector:
         self.stop_browser()
         self.start_browser(session_key=session_key)
 
+    def _wait_for_challenge_completion(self, max_wait_seconds: int = 12) -> bool:
+        """
+        Wait for Cloudflare JS challenge to auto-complete.
+
+        Many CF challenges are proof-of-work JS challenges that auto-pass
+        after a few seconds. This avoids unnecessary captcha solver calls.
+        """
+        logger.info("Waiting up to %ss for JS challenge to auto-complete...", max_wait_seconds)
+        for i in range(max_wait_seconds):
+            time.sleep(1)
+            if i % 3 == 0:
+                try:
+                    self.page.mouse.move(random.randint(100, 500), random.randint(100, 400))
+                except Exception:
+                    pass
+            if not self._is_captcha_page(self.page):
+                logger.info("JS challenge auto-completed after %ss", i + 1)
+                return True
+        return False
+
     def _goto_with_antibot(self, url: str, *, session_key: str, kind: str) -> bool:
         """Navigate to a URL and handle Cloudflare/captcha challenges (best-effort)."""
         if not self.page:
@@ -127,6 +147,12 @@ class JobCollector:
             )
             self._save_block_artifacts(self.page, prefix=f"{kind}_captcha")
 
+            # First, wait for JS challenge to auto-complete
+            if self._wait_for_challenge_completion(max_wait_seconds=12):
+                self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
+                return True
+
+            # If still blocked, try captcha solver
             solved = False
             if self.solver.available():
                 ok, solve_reason = self.solver.solve_if_present(self.page, detection=captcha_detection)

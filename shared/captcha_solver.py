@@ -149,6 +149,8 @@ class CaptchaSolver:
 
     def _extract_sitekey(self, page: Any) -> Optional[str]:
         """Extract the captcha sitekey from the page."""
+        import re
+
         try:
             # Try data-sitekey attribute (common for Turnstile/hCaptcha)
             elem = page.query_selector("[data-sitekey]")
@@ -182,25 +184,62 @@ class CaptchaSolver:
             for iframe in page.query_selector_all("iframe"):
                 src = iframe.get_attribute("src") or ""
                 if "sitekey=" in src:
-                    import re
                     match = re.search(r'sitekey=([^&]+)', src)
                     if match:
                         return match.group(1)
+                # Cloudflare challenge iframe - extract from URL path
+                if "challenges.cloudflare.com" in src:
+                    # Pattern: /cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv0/0x...
+                    match = re.search(r'/(0x[a-fA-F0-9]+)', src)
+                    if match:
+                        return match.group(1)
 
-            # Try to extract from page scripts
-            scripts = page.evaluate("""
+            # Try to extract from page scripts - comprehensive search
+            sitekey = page.evaluate("""
                 () => {
+                    // Check window._cf_chl_opt for Cloudflare managed challenge
+                    if (window._cf_chl_opt) {
+                        // The sitekey might be in chlApiSitekey or similar
+                        if (window._cf_chl_opt.chlApiSitekey) return window._cf_chl_opt.chlApiSitekey;
+                        if (window._cf_chl_opt.sitekey) return window._cf_chl_opt.sitekey;
+                    }
+
+                    // Check for turnstile render calls
+                    if (window.turnstile && window.turnstile._widgets) {
+                        for (const key of Object.keys(window.turnstile._widgets)) {
+                            const w = window.turnstile._widgets[key];
+                            if (w && w.sitekey) return w.sitekey;
+                        }
+                    }
+
+                    // Parse script content for sitekey patterns
                     const scripts = document.querySelectorAll('script');
                     for (const s of scripts) {
                         const text = s.textContent || '';
-                        const match = text.match(/sitekey['":\\s]+['"]([^'"]+)['"]/i);
+                        // Standard sitekey pattern
+                        let match = text.match(/sitekey['":\\s]+['"](0x[a-fA-F0-9]+)['"]/i);
+                        if (match) return match[1];
+                        // Cloudflare challenge config pattern
+                        match = text.match(/chlApiSitekey['":\\s]+['"](0x[a-fA-F0-9]+)['"]/i);
+                        if (match) return match[1];
+                        // Turnstile render pattern
+                        match = text.match(/turnstile\\.render[^}]*sitekey['":\\s]+['"](0x[a-fA-F0-9]+)['"]/i);
                         if (match) return match[1];
                     }
+
+                    // Check inline script src for challenge iframe
+                    const iframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]');
+                    for (const iframe of iframes) {
+                        const src = iframe.src || '';
+                        const match = src.match(/\\/(0x[a-fA-F0-9]+)/);
+                        if (match) return match[1];
+                    }
+
                     return null;
                 }
             """)
-            if scripts:
-                return scripts
+            if sitekey:
+                return sitekey
 
             return None
         except Exception as e:
