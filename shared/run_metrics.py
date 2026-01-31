@@ -87,12 +87,16 @@ class RunMetrics:
             payload["output_path"] = str(self.output_path)
         return payload
 
-    def write_json(self, *, template: str, extra: Optional[Dict[str, Any]] = None) -> Path:
-        rendered = _render_template(template) or "output/run_metrics_{timestamp}.json"
-        path = Path(rendered)
-        path.parent.mkdir(parents=True, exist_ok=True)
+    def write_json(self, path: Optional[Path] = None, *, template: Optional[str] = None, extra: Optional[Dict[str, Any]] = None) -> Path:
+        if path is not None:
+            out_path = Path(path)
+        elif template:
+            out_path = Path(_render_template(template))
+        else:
+            out_path = Path(f"output/run_metrics_{self.run_id}.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         payload = self.to_dict(extra=extra)
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        self.output_path = path
-        return path
+        out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        self.output_path = out_path
+        return out_path
 

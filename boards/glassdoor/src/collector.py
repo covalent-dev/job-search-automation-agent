@@ -1073,6 +1073,7 @@ class JobCollector:
 
                 captcha_detection = self._is_captcha_page(self.page)
                 if captcha_detection:
+                    self.captcha_consecutive += 1
                     logger.warning(
                         "Navigation blocked by captcha (attempt %s/%s, reason=%s, title=%s, url=%s)",
                         attempt,
@@ -1081,9 +1082,41 @@ class JobCollector:
                         captcha_detection["title"],
                         captcha_detection["url"],
                     )
+                    self._captcha_backoff()
+
+                    if self.captcha_solver.available():
+                        logger.info("Attempting to solve captcha on search/navigation page...")
+                        solved, reason = self.captcha_solver.solve_if_present(self.page, detection=captcha_detection)
+                        if solved:
+                            logger.info("Captcha solved autonomously on navigation page!")
+                            self.proxy_manager.record_captcha("glassdoor", solved=True)
+                            self.captcha_consecutive = 0
+                            time.sleep(3)
+                            if not self._is_captcha_page(self.page):
+                                return True
+                            continue
+                        logger.warning("Captcha solver failed: %s", reason)
+                        rotation_needed = self.proxy_manager.record_captcha("glassdoor", solved=False)
+                    else:
+                        rotation_needed = self.proxy_manager.record_captcha("glassdoor", solved=False)
+
+                    if rotation_needed and self.proxy_manager.is_enabled():
+                        logger.info("Rotating proxy due to consecutive captchas...")
+                        try:
+                            self.proxy_manager.perform_rotation("glassdoor")
+                        except Exception as exc:
+                            logger.warning("Proxy rotation state update failed: %s", exc)
+                        try:
+                            self.stop_browser()
+                            self.start_browser()
+                        except Exception as exc:
+                            logger.warning("Browser restart for proxy rotation failed: %s", exc)
+                            return False
+
                     time.sleep(random.uniform(5.0, 10.0))
                     continue
 
+                self.captcha_consecutive = 0
                 return True
             except Exception as exc:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
