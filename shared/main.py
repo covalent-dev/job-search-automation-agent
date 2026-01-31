@@ -171,9 +171,12 @@ def main():
 
     # AI scoring
     if config.is_ai_enabled():
-        print("🤖 AI scoring enabled: ranking jobs...")
         scorer = AIScorer(config)
-        scorer.score_jobs(jobs)
+        if scorer.available:
+            print("🤖 AI scoring enabled: ranking jobs...")
+            scorer.score_jobs(jobs)
+        else:
+            print("⚠️  AI scoring enabled but Ollama is not available; skipping scoring.")
 
     # Write output
     writer = OutputWriter(config)

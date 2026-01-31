@@ -1458,7 +1458,7 @@ class JobCollector:
                 added_this_page = 0
                 first_link = None
                 for i, card in enumerate(job_cards):
-                    if len(jobs) >= query.max_results:
+                    if query.max_results > 0 and len(jobs) >= query.max_results:
                         break
                     if progress_total > 0:
                         progress_current = min(i + 1, progress_total)
@@ -1601,7 +1601,7 @@ class JobCollector:
                 logger.info("No next page control found; stopping pagination")
                 break
 
-            if len(jobs) >= query.max_results:
+            if query.max_results > 0 and len(jobs) >= query.max_results:
                 break
 
             page_index += 1
