@@ -1389,7 +1389,7 @@ class JobCollector:
 
         return job_cards
 
-    def collect_jobs(self, query: SearchQuery) -> List[Job]:
+    def collect_jobs(self, query: SearchQuery, global_seen_links: set[str] | None = None) -> List[Job]:
         """Collect jobs for a single search query"""
         jobs = []
         seen_links = set()
@@ -1465,7 +1465,16 @@ class JobCollector:
                         print(f"\r   Progress: {progress_current}/{progress_total}", end="", flush=True)
                     try:
                         job = self._extract_job_from_card(card)
-                        if job and str(job.link) not in seen_links:
+                        link = str(job.link) if job and job.link else None
+                        if (
+                            job
+                            and link
+                            and link not in seen_links
+                            and (global_seen_links is None or link not in global_seen_links)
+                        ):
+                            seen_links.add(link)
+                            if global_seen_links is not None:
+                                global_seen_links.add(link)
                             if (
                         self.config.is_detail_salary_enabled()
                         and not job.salary
@@ -1552,7 +1561,6 @@ class JobCollector:
                                 if cached_date:
                                     job.date_posted = cached_date
 
-                            seen_links.add(str(job.link))
                             jobs.append(job)
                             self.total_jobs_collected += 1
                             if job.salary:
@@ -1562,8 +1570,8 @@ class JobCollector:
                                 self._write_checkpoint(self.jobs_checkpoint)
                             added_this_page += 1
                             logger.debug("Extracted: %s at %s", job.title, job.company)
-                        if first_link is None and job:
-                            first_link = str(job.link)
+                        if first_link is None and link:
+                            first_link = link
                     except Exception as e:
                         logger.warning("Failed to extract job %s: %s", i, e)
                         continue
@@ -1919,6 +1927,7 @@ class JobCollector:
     def collect_all(self, queries: List[SearchQuery]) -> List[Job]:
         """Collect jobs for all search queries"""
         all_jobs = []
+        global_seen_links: set[str] = set()
 
         print("\n" + "="*60)
         print("🤖 STARTING JOB COLLECTION")
@@ -1929,7 +1938,7 @@ class JobCollector:
 
             for query in queries:
                 try:
-                    jobs = self.collect_jobs(query)
+                    jobs = self.collect_jobs(query, global_seen_links=global_seen_links)
                     all_jobs.extend(jobs)
                     self._random_delay()
                 except CaptchaAbort:
