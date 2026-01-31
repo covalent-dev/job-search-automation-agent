@@ -8,94 +8,83 @@ search:
   - AI platform engineer
   - MLOps engineer
   - LLM engineer
-  - LLM ops engineer
+  - LLMOps engineer
   - RAG engineer
   - generative AI engineer
   - AI automation engineer
   location: Remote
-  max_results_per_search: 50
-  max_pages: 0
-  detail_salary_fetch: true
+  max_results_per_search: 10
+  max_pages: 2
+  # Integration testing: keep runs bounded; LinkedIn detail salary fetch can be slow/brittle.
+  detail_salary_fetch: false
   detail_salary_timeout: 9
   detail_salary_retries: 1
   detail_salary_max_per_query: 0
   detail_salary_delay_min: 1.5
   detail_salary_delay_max: 2.5
-  detail_description_fetch: false
+  # Required for Groq scoring and the "descriptions populated" verification.
+  detail_description_fetch: true
   detail_description_timeout: 12
   detail_description_retries: 1
   detail_description_max_per_query: 0
   detail_description_delay_min: 1.5
   detail_description_delay_max: 2.5
-  detail_queue:
-    enabled: true
-    concurrency: 2
-    max_attempts: 3
-    retry_schedule_seconds: [60, 300, 900]  # 1m → 5m → 15m
-    jitter_seconds: 10
-    max_total_wait_seconds: 900
   job_boards:
   - linkedin
+  # Queue + backoff
+  detail_fetch_concurrency: 3
+  # optional: override retry schedule (seconds)
+  # detail_retry_schedule: [60, 300, 900]
 output:
   json_file: output/jobs_{timestamp}.json
   markdown_file: output/jobs_{timestamp}.md
   use_timestamp: true
   vault_sync:
     enabled: true
-    vault_path: /Users/taxman/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/linkedin
+    vault_path: /root/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/linkedin
 browser:
+  # LinkedIn tends to require a headed browser.
   headless: false
   min_delay: 0.5
   max_delay: 2.0
-  page_timeout: 30
-  navigation_timeout: 45
-  launch_timeout: 60
+  page_timeout: 15
+  navigation_timeout: 20
+  launch_timeout: 30
   max_retries: 2
   channel: ''
   executable_path: ''
   use_stealth: false
-  proxy:
-    enabled: false
-    provider: "iproyal"  # generic | iproyal
-    # Prefer secrets via .env (PROXY_* or IPROYAL_*); leave these blank in config.
-    server: ""
-    host: ""
-    port: ""
-    username: ""
-    password: ""
-    username_template: ""  # include {session} if provider requires
-    sticky_session: true
-    session_scope: "query"  # run | query
-    pool_size: 4
-    session_ttl_seconds: 1800
-    rotate_on_captcha: true
-    rotate_on_failure: false
 ai_filter:
   enabled: true
-  model: deepseek-coder-v2:latest
-  scoring_prompt: 'You are filtering + scoring jobs for fit with the target search
-    intent.
+  backend: groq
+  model: llama-3.3-70b-versatile
+  scoring_prompt: |
+    You are filtering jobs for an AI/ML engineer job search.
 
-    First decide include/exclude. If exclude, score must be 0.
+    INCLUDE (score 6-10):
+    - AI engineer, ML engineer, machine learning engineer
+    - Data scientist, research scientist (ML/AI focus)
+    - MLOps, LLMOps, AI platform, AI infrastructure
+    - NLP, computer vision, deep learning roles
+    - Software engineer with ML/AI focus
 
-    Return ONLY valid JSON with this schema:
+    EXCLUDE (score 0):
+    - Interpreters, translators
+    - Therapists, nurses, physicians, medical roles
+    - Accountants, bookkeepers, tax preparers
+    - Customer service, call center, sales
+    - Recruiters, HR roles
+    - Admin assistants, processors
+    - Roles with "Remote" in title but unrelated to tech
 
-    {{"include": <true|false>, "score": <0-10 integer>, "reason": "<short phrase>"}}
+    IMPORTANT: Senior/Staff/Principal roles ARE acceptable.
 
-    Keep reason under 12 words. No extra text. No markdown/code fences.
+    Return ONLY valid JSON: {{"include": true|false, "score": 0-10, "reason": "<5 words max>"}}
 
-    Example: {{"include": true, "score": 7, "reason": "Strong ML fit"}}
-
-    Exclude if the role is clearly off-target (wrong domain, senior-only, unrelated
-    function).
-
-    Job: {title} at {company} ({location})
-
+    Job: {title} at {company}
     Description: {description}
-
-    '
   max_retries: 2
-  max_reasoning_chars: 120
+  max_reasoning_chars: 80
   include_reasoning: true
   debug: false
 post_run:
@@ -154,25 +143,36 @@ post_run:
   min_ai_score: 0
   top_n: 0
 dedupe:
-  enabled: false
-  hash_file: output/dedupe_hashes.jsonl
-notifications:
   enabled: true
+  hash_file: output/dedupe_hashes.jsonl
 logging:
   level: INFO
   log_file: logs/job_bot_{timestamp}.log
 
-metrics:
-  enabled: true
-  output_file: output/run_metrics_{timestamp}.json
-  include_events: true
+# --- Added for proxy + captcha solver ---
+proxy:
+  enabled: false
+  provider: http           # http | static_list | template
+  server: ""               # e.g., http://host:port or http://{session}.isp-proxy.net:1234
+  username: ""
+  password: ""
+  sticky: true
+  session_param: session
+  session_ttl: 1800
+  pool_size: 4
+  endpoints: []            # for provider=static_list
+  rotate_on_captcha_consecutive: 2
 
-# Captcha auto-solve (optional; requires provider API key via .env)
 captcha:
   enabled: false
-  provider: "2captcha"
-  api_key_env: "CAPTCHA_API_KEY"
-  solve_timeout_seconds: 180
-  max_solve_attempts: 2
-  poll_interval_seconds: 5
-  on_detect: "skip"  # abort | skip | pause
+  provider: 2captcha      # 2captcha | anticaptcha | capsolver
+  api_key: ""
+  timeout: 120
+  max_retries: 2
+  # Optional captcha backoff tuning (seconds)
+  backoff_base_seconds: 60
+  backoff_max_seconds: 300
+
+# (Note) This file previously had a duplicate top-level `search:` key at the end,
+# which would override the main search config in YAML parsers. Keep all search
+# settings in the primary `search:` block above.
