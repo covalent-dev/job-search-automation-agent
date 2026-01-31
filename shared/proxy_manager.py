@@ -74,9 +74,71 @@ class ProxyManager:
         - auto-appending `-session-{session}` for provider == "iproyal".
     """
 
-    def __init__(self, settings: ProxyManagerSettings):
-        self.settings = settings
+    def __init__(self, config_or_settings):
+        """
+        Initialize ProxyManager from either a config object or ProxyManagerSettings.
+
+        Args:
+            config_or_settings: Either a ConfigLoader instance or ProxyManagerSettings
+        """
+        if isinstance(config_or_settings, ProxyManagerSettings):
+            self.settings = config_or_settings
+        else:
+            # Assume it's a config object - extract settings
+            self.settings = self._settings_from_config(config_or_settings)
+
         self._sessions: dict[int, _SessionState] = {}
+        self._consecutive_captchas: int = 0
+        self._rotate_threshold: int = 2
+        self._needs_rotation: bool = False
+        self._total_rotations: int = 0
+
+        # Extract rotation threshold from config if available
+        if hasattr(config_or_settings, "get"):
+            proxy_config = config_or_settings.get("proxy", {}) or {}
+            self._rotate_threshold = int(proxy_config.get("rotate_on_captcha_consecutive", 2))
+        elif hasattr(config_or_settings, "get_proxy_config"):
+            proxy_config = config_or_settings.get_proxy_config() or {}
+            self._rotate_threshold = int(proxy_config.get("rotate_on_captcha_consecutive", 2))
+
+    @staticmethod
+    def _settings_from_config(config) -> "ProxyManagerSettings":
+        """Extract ProxyManagerSettings from a config object."""
+        proxy_config = {}
+        if hasattr(config, "get_proxy_config"):
+            proxy_config = config.get_proxy_config() or {}
+        elif hasattr(config, "get"):
+            proxy_config = config.get("proxy", {}) or {}
+
+        enabled = bool(proxy_config.get("enabled", False))
+        provider = (proxy_config.get("provider") or "http").strip()
+        server = (proxy_config.get("server") or "").strip()
+        username = (proxy_config.get("username") or "").strip()
+        password = (proxy_config.get("password") or "").strip()
+        username_template = proxy_config.get("username_template")
+
+        # Handle sticky session settings
+        sticky = proxy_config.get("sticky", True)
+        session_param = proxy_config.get("session_param", "session")
+        session_ttl = int(proxy_config.get("session_ttl", 1800))
+        pool_size = int(proxy_config.get("pool_size", 4))
+        rotate_on_captcha = bool(proxy_config.get("rotate_on_captcha_consecutive", 0) > 0)
+        rotate_on_failure = bool(proxy_config.get("rotate_on_failure", False))
+
+        return ProxyManagerSettings(
+            enabled=enabled,
+            provider=provider,
+            server=server,
+            username=username,
+            password=password,
+            username_template=username_template,
+            sticky_session=sticky,
+            session_scope="run",
+            pool_size=pool_size,
+            session_ttl_seconds=session_ttl,
+            rotate_on_captcha=rotate_on_captcha,
+            rotate_on_failure=rotate_on_failure,
+        )
 
     @classmethod
     def from_config(cls, config: Any) -> "ProxyManager":
@@ -88,6 +150,11 @@ class ProxyManager:
         settings_dict = config.get_proxy_manager_settings()
         settings = ProxyManagerSettings(**settings_dict)
         return cls(settings)
+
+    @property
+    def enabled(self) -> bool:
+        """Property alias for is_enabled() for convenience."""
+        return bool(self.settings.enabled)
 
     def is_enabled(self) -> bool:
         return bool(self.settings.enabled)
@@ -119,12 +186,20 @@ class ProxyManager:
 
         return state.session_id
 
-    def rotate(self, affinity_key: str, *, reason: str) -> None:
+    def rotate(self, affinity_key: str = "run", *, session_key: str = None, reason: str = "manual") -> None:
         """
         Rotate the session used for this affinity_key.
 
         Caller must restart Playwright browser/context after calling rotate().
+
+        Args:
+            affinity_key: The affinity key for the session (positional or keyword)
+            session_key: Alias for affinity_key (keyword only, for compatibility)
+            reason: Reason for rotation (for logging)
         """
+        # Allow session_key as alias for affinity_key
+        if session_key is not None:
+            affinity_key = session_key
         if not self.is_enabled():
             return
 
@@ -185,4 +260,77 @@ class ProxyManager:
             proxy["password"] = password
 
         return proxy
+
+    def get_proxy(self, affinity_key: str = "run") -> Optional[Dict[str, str]]:
+        """
+        Alias for get_playwright_proxy for convenience.
+
+        Returns Playwright-compatible proxy dict or None.
+        """
+        return self.get_playwright_proxy(affinity_key)
+
+    def record_captcha(self, affinity_key: str = "run", *, session_key: str = None, solved: bool = False) -> bool:
+        """
+        Record a captcha event and check if rotation is needed.
+
+        Args:
+            affinity_key: The affinity key for the session (positional or keyword)
+            session_key: Alias for affinity_key (keyword only, for compatibility)
+            solved: Whether the captcha was successfully solved
+
+        Returns:
+            True if proxy rotation is needed (caller should restart browser)
+        """
+        # Allow session_key as alias for affinity_key
+        if session_key is not None:
+            affinity_key = session_key
+
+        if solved:
+            # Reset consecutive counter on successful solve
+            self._consecutive_captchas = 0
+            self._needs_rotation = False
+            return False
+
+        self._consecutive_captchas += 1
+        logger.info(
+            "Captcha recorded (consecutive=%d, threshold=%d)",
+            self._consecutive_captchas,
+            self._rotate_threshold,
+        )
+
+        if self._consecutive_captchas >= self._rotate_threshold:
+            logger.info("Consecutive captcha threshold reached - rotation needed")
+            self._needs_rotation = True
+            return True
+
+        return False
+
+    def needs_rotation(self) -> bool:
+        """Check if proxy rotation is needed."""
+        return self._needs_rotation
+
+    def perform_rotation(self, affinity_key: str = "run") -> None:
+        """
+        Perform proxy rotation and reset state.
+
+        Caller must restart browser/context after this.
+        """
+        if not self.is_enabled():
+            return
+
+        self.rotate(affinity_key, reason="consecutive_captchas")
+        self._consecutive_captchas = 0
+        self._needs_rotation = False
+        self._total_rotations += 1
+        logger.info("Proxy rotation performed (total_rotations=%d)", self._total_rotations)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get proxy manager statistics."""
+        return {
+            "enabled": self.is_enabled(),
+            "consecutive_captchas": self._consecutive_captchas,
+            "rotate_threshold": self._rotate_threshold,
+            "needs_rotation": self._needs_rotation,
+            "total_rotations": self._total_rotations,
+        }
 
