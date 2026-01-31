@@ -61,6 +61,7 @@ class JobCollector:
         self.detail_salary_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
         self.detail_description_cache: dict[str, Optional[str]] = {}
         self.detail_company_cache: dict[str, Optional[str]] = {}
+        self.detail_date_cache: dict[str, Optional[str]] = {}
         self.detail_page_cache: dict[str, DetailPageData] = {}
         self.skip_detail_fetches = False
         self.detail_debug_saved = False
@@ -594,6 +595,29 @@ class JobCollector:
             return None
         return self._find_company_name_in_data(data, max_depth=7)
 
+    def _extract_date_from_next_data(self, page: Page) -> Optional[str]:
+        """Extract postedDate from __NEXT_DATA__ JSON (RemoteJobs uses Next.js)."""
+        script = page.query_selector("script#__NEXT_DATA__")
+        raw = self._extract_text(script)
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return None
+        # Path: props.pageProps.data.jobDetails.postedDate
+        try:
+            job_details = data.get("props", {}).get("pageProps", {}).get("data", {}).get("jobDetails", {})
+            posted_date = job_details.get("postedDate")
+            if posted_date:
+                # Format: "2025-12-12T22:59:29Z" -> "2025-12-12"
+                if "T" in posted_date:
+                    return posted_date.split("T")[0]
+                return posted_date
+        except Exception:
+            pass
+        return None
+
     def _extract_company_from_dom(self, page: Page) -> Optional[str]:
         root = page.query_selector("main") or page.query_selector("article") or page
         selectors = [
@@ -933,6 +957,12 @@ class JobCollector:
                     if detail_company:
                         data.company = detail_company
 
+                # Extract date_posted from __NEXT_DATA__ (RemoteJobs only)
+                if job_board == "remotejobs":
+                    detail_date = self._extract_date_from_next_data(detail_page)
+                    if detail_date:
+                        data.date_posted = detail_date
+
                 # Extract description
                 if self.config.is_detail_description_enabled():
                     for selector in description_selectors:
@@ -981,6 +1011,8 @@ class JobCollector:
         self.detail_description_cache[url] = data.description
         if data.company:
             self.detail_company_cache[url] = data.company
+        if data.date_posted:
+            self.detail_date_cache[url] = data.date_posted
 
         self.detail_page_cache[url] = data
         return data
@@ -1008,6 +1040,16 @@ class JobCollector:
             return self.detail_description_cache[url]
         data = self._fetch_detail_page(url)
         return data.description
+
+    def _fetch_detail_date(self, url: str) -> Optional[str]:
+        """Wrapper to get date_posted from detail page (RemoteJobs only)."""
+        if url in self.detail_date_cache:
+            return self.detail_date_cache[url]
+        job_board = (self.current_board or "").lower()
+        if job_board != "remotejobs":
+            return None
+        data = self._fetch_detail_page(url)
+        return data.date_posted
 
     def _safe_goto(self, url: str) -> bool:
         """Navigate with retry for flaky pages."""
@@ -1503,6 +1545,12 @@ class JobCollector:
                                 cached_company = self.detail_company_cache.get(str(job.link))
                                 if cached_company:
                                     job.company = cached_company
+
+                            # Populate date_posted from cache (extracted during detail page fetch)
+                            if self.current_board == "remotejobs" and not job.date_posted:
+                                cached_date = self.detail_date_cache.get(str(job.link))
+                                if cached_date:
+                                    job.date_posted = cached_date
 
                             seen_links.add(str(job.link))
                             jobs.append(job)
