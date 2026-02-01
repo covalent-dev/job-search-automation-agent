@@ -210,6 +210,15 @@ class JobCollector:
         delay = random.uniform(min_delay, max_delay)
         time.sleep(delay)
 
+    def _delay_between_queries(self) -> None:
+        """Add longer delay between keyword queries to avoid rate limiting."""
+        min_delay = float(self.config.get("cloudflare.min_delay_between_queries", 30.0) or 30.0)
+        max_delay = float(self.config.get("cloudflare.max_delay_between_queries", 60.0) or 60.0)
+        delay = random.uniform(min_delay, max_delay)
+        logger.info("Waiting %.1fs between queries to avoid rate limiting...", delay)
+        print(f"   ⏳ Waiting {delay:.0f}s before next query...")
+        time.sleep(delay)
+
     def _apply_stealth_to_page(self, page: Page) -> None:
         """Apply stealth patches to a page"""
         if not self.config.use_stealth():
@@ -1607,11 +1616,13 @@ class JobCollector:
                 logger.warning("Indeed warmup failed - bot detection likely active")
                 print("⚠️  Indeed warmup failed - bot detection may be active")
 
-            for query in queries:
+            for i, query in enumerate(queries):
                 try:
                     jobs = self.collect_jobs(query)
                     all_jobs.extend(jobs)
-                    self._random_delay()
+                    # Use longer delay between queries (not after the last one)
+                    if i < len(queries) - 1:
+                        self._delay_between_queries()
                 except CaptchaAbort:
                     logger.warning("Aborting run after captcha per user request")
                     print("\n⚠️  Run aborted by user after captcha.")
