@@ -1,18 +1,17 @@
 search:
   keywords:
   - AI engineer
-  # TESTING: reduced keywords for faster test
-  # - AI/ML engineer
-  # - machine learning engineer
-  # - AI systems engineer
-  # - AI infrastructure engineer
-  # - AI platform engineer
-  # - MLOps engineer
-  # - LLM engineer
-  # - LLMOps engineer
-  # - RAG engineer
-  # - generative AI engineer
-  # - AI automation engineer
+  - AI/ML engineer
+  - machine learning engineer
+  - AI systems engineer
+  - AI infrastructure engineer
+  - AI platform engineer
+  - MLOps engineer
+  - LLM engineer
+  - LLMOps engineer
+  - RAG engineer
+  - generative AI engineer
+  - AI automation engineer
   location: Remote
   max_results_per_search: 10
   max_pages: 2
@@ -24,7 +23,9 @@ search:
   detail_salary_delay_min: 1.5
   detail_salary_delay_max: 2.5
   # Integration testing: avoid interactive captcha prompts during detail fetches.
-  detail_description_fetch: true
+  # Detail fetch disabled: each job detail page triggers separate captcha challenges.
+  # Basic job info (title, company, location) is extracted from search results.
+  detail_description_fetch: false
   detail_description_timeout: 12
   detail_description_retries: 1
   detail_description_max_per_query: 0
@@ -145,11 +146,13 @@ dedupe:
   enabled: true
   hash_file: output/dedupe_hashes.jsonl
 logging:
-  level: DEBUG
+  level: INFO
   log_file: logs/job_bot_{timestamp}.log
 
+# Proxy disabled: Glassdoor challenges are more aggressive through proxy IPs.
+# FlareSolverr works better when Playwright uses the same direct IP.
 proxy:
-  enabled: false  # TESTING: disabled to test without proxy
+  enabled: false
   provider: http
   server: "http://${PROXY_HOST}:${PROXY_PORT}"
   username: "${PROXY_USERNAME}"
@@ -170,8 +173,10 @@ captcha:
   backoff_base_seconds: 60
   backoff_max_seconds: 300
 
+# FlareSolverr solves Cloudflare challenges and returns cookies.
+# use_proxy disabled so FlareSolverr uses same IP as Playwright.
 flaresolverr:
   enabled: true
   url: "http://localhost:8191"
   timeout: 60
-  use_proxy: false  # TESTING: disabled to match Playwright's direct IP
+  use_proxy: false

@@ -1077,9 +1077,7 @@ class JobCollector:
         while attempt < self.max_retries:
             attempt += 1
             try:
-                logger.debug("_safe_goto: navigating to %s (attempt %s)", url, attempt)
                 self.page.goto(url, wait_until="domcontentloaded")
-                logger.debug("_safe_goto: navigation complete, title=%s", self.page.title())
                 if self.config.use_stealth():
                     time.sleep(random.uniform(1.0, 2.0))
                     try:
@@ -1090,7 +1088,6 @@ class JobCollector:
                         pass
 
                 captcha_detection = self._is_captcha_page(self.page)
-                logger.debug("_safe_goto: captcha_detection=%s", captcha_detection)
                 if captcha_detection:
                     # Wait for JS challenge to resolve - "Just a moment..." may auto-pass
                     if "just a moment" in (captcha_detection.get("title") or "").lower():
@@ -1177,36 +1174,51 @@ class JobCollector:
     def _try_click_turnstile(self) -> bool:
         """Attempt to click Turnstile checkbox to complete verification."""
         try:
-            # Try multiple selectors for Turnstile checkbox
+            # Wait for Turnstile iframe to be created (it's loaded dynamically)
             selectors = [
                 "iframe[src*='challenges.cloudflare.com']",
                 "iframe[src*='turnstile']",
                 ".cf-turnstile iframe",
                 "iframe[title*='challenge']",
             ]
-            for selector in selectors:
-                iframe = self.page.query_selector(selector)
-                if iframe:
-                    logger.info("Found Turnstile iframe: %s", selector)
-                    try:
-                        # Click in the center of the iframe (checkbox location)
-                        box = iframe.bounding_box()
-                        if box:
-                            # Checkbox is usually in the left part of the iframe
-                            click_x = box["x"] + 30
-                            click_y = box["y"] + box["height"] / 2
-                            logger.info("Clicking Turnstile at (%d, %d)", click_x, click_y)
-                            self.page.mouse.click(click_x, click_y)
-                            time.sleep(2)
-                            return True
-                    except Exception as click_exc:
-                        logger.debug("Failed to click Turnstile: %s", click_exc)
+            logger.info("Looking for Turnstile iframe...")
 
-            # Fallback: try to find and click any visible checkbox in verification area
+            # Give Turnstile time to load (up to 10s)
+            iframe = None
+            for wait in range(10):
+                for selector in selectors:
+                    iframe = self.page.query_selector(selector)
+                    if iframe:
+                        logger.info("Found Turnstile iframe after %ds: %s", wait, selector)
+                        break
+                if iframe:
+                    break
+                time.sleep(1)
+
+            if iframe:
+                try:
+                    # Wait for iframe to be visible and have dimensions
+                    time.sleep(1)
+                    box = iframe.bounding_box()
+                    if box and box["width"] > 0 and box["height"] > 0:
+                        # Checkbox is usually in the left part of the iframe
+                        click_x = box["x"] + 30
+                        click_y = box["y"] + box["height"] / 2
+                        logger.info("Clicking Turnstile at (%.0f, %.0f)", click_x, click_y)
+                        self.page.mouse.click(click_x, click_y)
+                        time.sleep(3)
+                        return True
+                    else:
+                        logger.debug("Turnstile iframe has no bounding box")
+                except Exception as click_exc:
+                    logger.debug("Failed to click Turnstile: %s", click_exc)
+            else:
+                logger.debug("No Turnstile iframe found after waiting")
+
+            # Fallback: try to find and click any visible checkbox
             checkbox_selectors = [
                 "input[type='checkbox']",
                 "[role='checkbox']",
-                ".checkbox",
             ]
             for selector in checkbox_selectors:
                 checkbox = self.page.query_selector(selector)
