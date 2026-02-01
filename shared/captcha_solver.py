@@ -150,6 +150,15 @@ class CaptchaSolver:
     def _extract_sitekey(self, page: Any) -> Optional[str]:
         """Extract the captcha sitekey from the page."""
         import re
+        import time
+
+        # Wait for Turnstile widget to load (up to 5 seconds)
+        for _ in range(10):
+            if page.query_selector("[data-sitekey]") or page.query_selector(".cf-turnstile"):
+                break
+            if page.query_selector("iframe[src*='challenges.cloudflare.com']"):
+                break
+            time.sleep(0.5)
 
         try:
             # Try data-sitekey attribute (common for Turnstile/hCaptcha)
@@ -202,6 +211,7 @@ class CaptchaSolver:
                         // The sitekey might be in chlApiSitekey or similar
                         if (window._cf_chl_opt.chlApiSitekey) return window._cf_chl_opt.chlApiSitekey;
                         if (window._cf_chl_opt.sitekey) return window._cf_chl_opt.sitekey;
+                        if (window._cf_chl_opt.cTurnstileSitekey) return window._cf_chl_opt.cTurnstileSitekey;
                     }
 
                     // Check for turnstile render calls
@@ -210,6 +220,17 @@ class CaptchaSolver:
                             const w = window.turnstile._widgets[key];
                             if (w && w.sitekey) return w.sitekey;
                         }
+                    }
+
+                    // Check turnstile.getResponse for already rendered widget
+                    if (window.turnstile && typeof window.turnstile.getResponse === 'function') {
+                        try {
+                            const containers = document.querySelectorAll('.cf-turnstile, [data-sitekey]');
+                            for (const c of containers) {
+                                const sk = c.getAttribute('data-sitekey');
+                                if (sk) return sk;
+                            }
+                        } catch (e) {}
                     }
 
                     // Parse script content for sitekey patterns
@@ -225,6 +246,12 @@ class CaptchaSolver:
                         // Turnstile render pattern
                         match = text.match(/turnstile\\.render[^}]*sitekey['":\\s]+['"](0x[a-fA-F0-9]+)['"]/i);
                         if (match) return match[1];
+                        // cTurnstileSitekey pattern
+                        match = text.match(/cTurnstileSitekey['":\\s]+['"](0x[a-fA-F0-9]+)['"]/i);
+                        if (match) return match[1];
+                        // data-sitekey in HTML content
+                        match = text.match(/data-sitekey['"=\\s]+['"](0x[a-fA-F0-9]+)['"]/i);
+                        if (match) return match[1];
                     }
 
                     // Check inline script src for challenge iframe
@@ -234,6 +261,11 @@ class CaptchaSolver:
                         const match = src.match(/\\/(0x[a-fA-F0-9]+)/);
                         if (match) return match[1];
                     }
+
+                    // Last resort: search entire HTML for sitekey pattern
+                    const html = document.documentElement.outerHTML || '';
+                    const htmlMatch = html.match(/data-sitekey=["'](0x[a-fA-F0-9]+)["']/i);
+                    if (htmlMatch) return htmlMatch[1];
 
                     return null;
                 }
