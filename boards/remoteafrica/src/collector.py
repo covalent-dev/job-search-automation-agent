@@ -83,9 +83,12 @@ class JobCollector:
     def _build_search_url(self, query: SearchQuery, page_index: int = 0) -> str:
         """Build search URL for job board"""
         if "remoteafrica" in self.config.get_job_boards():
+            # Remote4Africa uses ?query= for keyword search and ?page= for pagination
+            from urllib.parse import quote_plus
+            keyword = quote_plus(query.keyword)
             if page_index <= 0:
-                return REMOTEAFRICA_BASE_URL
-            return f"{REMOTEAFRICA_BASE_URL}?page={page_index + 1}"
+                return f"{REMOTEAFRICA_BASE_URL}?query={keyword}"
+            return f"{REMOTEAFRICA_BASE_URL}?query={keyword}&page={page_index + 1}"
 
         # Indeed URL structure (legacy)
         keyword = query.keyword.replace(" ", "+")
@@ -1335,7 +1338,6 @@ class JobCollector:
     def collect_all(self, queries: List[SearchQuery]) -> List[Job]:
         """Collect jobs for all search queries"""
         all_jobs = []
-        single_query_only = "remoteafrica" in self.config.get_job_boards()
 
         print("\n" + "="*60)
         print("🤖 STARTING JOB COLLECTION")
@@ -1345,9 +1347,6 @@ class JobCollector:
             self.start_browser()
 
             for query in queries:
-                if single_query_only and getattr(query, "index", 1) != 1:
-                    print("   ⏭️  Remote4Africa uses a global list; skipping extra keyword queries.")
-                    continue
                 try:
                     jobs = self.collect_jobs(query)
                     all_jobs.extend(jobs)
