@@ -20,6 +20,7 @@ from models import Job, SearchQuery
 from run_metrics import RunMetrics
 from proxy_manager import ProxyManager
 from captcha_solver import CaptchaSolver
+from flaresolverr import FlareSolverr, flaresolverr_cookies_to_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,19 @@ class JobCollector:
         self.proxy_mgr = ProxyManager(config)
         self.solver = CaptchaSolver(config)
         self._startup_session_key = "indeed:startup"
+        self.flaresolverr = None
+        self.flaresolverr_use_proxy = True
+        try:
+            enabled = bool(self.config.get("flaresolverr.enabled", False))
+            url = (self.config.get("flaresolverr.url") or "").strip()
+            legacy_url = (self.config.get("cloudflare.flaresolverr_url") or "").strip()
+            url = url or legacy_url
+            if enabled and url:
+                timeout = int(self.config.get("flaresolverr.timeout", 60) or 60)
+                self.flaresolverr = FlareSolverr(url=url, timeout=timeout)
+                self.flaresolverr_use_proxy = bool(self.config.get("flaresolverr.use_proxy", True))
+        except Exception:
+            self.flaresolverr = None
 
         try:
             self.metrics.set_gauge("proxy_enabled", bool(self.config.get("proxy.enabled", False)))
@@ -127,7 +141,7 @@ class JobCollector:
             raise RuntimeError("Browser not started")
         max_attempts = max(1, int(self.config.get("captcha.max_retries", 2)) + 1)
         for attempt in range(1, max_attempts + 1):
-            if not self._safe_goto(url):
+            if not self._safe_goto(url, session_key=session_key):
                 continue
 
             captcha_detection = self._is_captcha_page(self.page)
@@ -969,16 +983,125 @@ class JobCollector:
         return description
 
 
-    def _safe_goto(self, url: str) -> bool:
-        """Navigate with retry for flaky pages."""
+    def _safe_goto(self, url: str, *, session_key: Optional[str] = None) -> bool:
+        """Navigate with retry for flaky pages, with optional FlareSolverr fallback."""
         for attempt in range(1, self.max_retries + 1):
             try:
                 self.page.goto(url, wait_until="domcontentloaded")
+                try:
+                    detection = self._is_captcha_page(self.page)
+                except Exception:
+                    detection = None
+                if detection and self._should_try_flaresolverr(detection):
+                    self._try_flaresolverr_bypass(url, session_key=session_key, detection=detection)
                 return True
             except Exception as exc:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
                 self._random_delay()
         return False
+
+    def _should_try_flaresolverr(self, detection: Optional[dict]) -> bool:
+        if not detection or not self.flaresolverr:
+            return False
+        reason = (detection.get("reason") or "").lower()
+        title = (detection.get("title") or "").lower()
+        if any(
+            marker in reason
+            for marker in (
+                "selector:hcaptcha-iframe",
+                "selector:recaptcha-iframe",
+                "selector:cf-turnstile",
+                "selector:data-sitekey",
+            )
+        ):
+            return False
+        return (
+            "cloudflare" in reason
+            or reason.startswith("title:just a moment")
+            or reason.startswith("title:attention required")
+            or reason.startswith("url:__cf_chl")
+            or reason.startswith("url:/cdn-cgi/")
+            or "just a moment" in title
+            or "cloudflare" in title
+        )
+
+    def _playwright_proxy_to_url(self, proxy: Optional[dict]) -> Optional[str]:
+        if not proxy:
+            return None
+        server = (proxy.get("server") or "").strip()
+        if not server:
+            return None
+
+        from urllib.parse import quote, urlparse, urlunparse
+
+        parsed = urlparse(server if "://" in server else f"http://{server}")
+        hostname = parsed.hostname or ""
+        port = f":{parsed.port}" if parsed.port else ""
+        username = (proxy.get("username") or "").strip()
+        password = (proxy.get("password") or "").strip()
+        if username and password:
+            auth = f"{quote(username, safe='')}:{quote(password, safe='')}@"
+        elif username:
+            auth = f"{quote(username, safe='')}@"
+        else:
+            auth = ""
+        netloc = f"{auth}{hostname}{port}"
+        return urlunparse((parsed.scheme or "http", netloc, parsed.path or "", "", "", ""))
+
+    def _try_flaresolverr_bypass(self, url: str, *, session_key: Optional[str], detection: dict) -> bool:
+        if not self.flaresolverr or not self.context or not self.page:
+            return False
+        if not self.flaresolverr.is_available():
+            return False
+
+        proxy_url = None
+        if self.flaresolverr_use_proxy and session_key and self.proxy_mgr.enabled:
+            proxy_url = self._playwright_proxy_to_url(self.proxy_mgr.get_proxy(session_key))
+
+        logger.info(
+            "Attempting FlareSolverr bypass (reason=%s, proxy=%s)",
+            detection.get("reason"),
+            "enabled" if proxy_url else "disabled",
+        )
+        try:
+            result = self.flaresolverr.solve(url, proxy_url=proxy_url)
+        except Exception as exc:
+            logger.warning("FlareSolverr bypass failed: %s", exc)
+            return False
+
+        if not result.success:
+            logger.info("FlareSolverr did not solve challenge: %s", result.error)
+            return False
+
+        try:
+            cookies = flaresolverr_cookies_to_playwright(result.cookies)
+            if cookies:
+                self.context.add_cookies(cookies)
+        except Exception as exc:
+            logger.debug("Failed to inject FlareSolverr cookies: %s", exc)
+
+        if result.user_agent:
+            try:
+                self.context.set_extra_http_headers({"User-Agent": result.user_agent})
+            except Exception:
+                pass
+            try:
+                ua = result.user_agent.replace("\\", "\\\\").replace("'", "\\'")
+                self.context.add_init_script(
+                    "Object.defineProperty(navigator,'userAgent',{get:()=>'" + ua + "'});"
+                )
+            except Exception:
+                pass
+
+        try:
+            self.page.goto(url, wait_until="domcontentloaded")
+        except Exception:
+            pass
+
+        try:
+            return self._is_captcha_page(self.page) is None
+        except Exception:
+            return False
 
     def _has_next_page(self) -> bool:
         """Check if a next page control exists and is enabled."""

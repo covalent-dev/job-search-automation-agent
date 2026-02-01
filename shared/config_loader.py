@@ -238,6 +238,25 @@ class ConfigLoader:
 
     def get_captcha_config(self) -> dict:
         return dict(self.get('captcha', {}) or {})
+
+    # === FlareSolverr Config ===
+
+    def get_flaresolverr_config(self) -> dict:
+        """
+        Get FlareSolverr configuration.
+
+        Backwards-compat: if `flaresolverr.url` is empty, fall back to
+        `cloudflare.flaresolverr_url` (legacy setting).
+        """
+        cfg = dict(self.get("flaresolverr", {}) or {})
+        if not cfg.get("url"):
+            legacy = (self.get("cloudflare.flaresolverr_url", "") or "").strip()
+            if legacy:
+                cfg["url"] = legacy
+        return cfg
+
+    def flaresolverr_enabled(self) -> bool:
+        return bool(self.get("flaresolverr.enabled", False))
     
     # === AI Config ===
     
