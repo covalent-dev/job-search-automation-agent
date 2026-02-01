@@ -1077,7 +1077,9 @@ class JobCollector:
         while attempt < self.max_retries:
             attempt += 1
             try:
+                logger.debug("_safe_goto: navigating to %s (attempt %s)", url, attempt)
                 self.page.goto(url, wait_until="domcontentloaded")
+                logger.debug("_safe_goto: navigation complete, title=%s", self.page.title())
                 if self.config.use_stealth():
                     time.sleep(random.uniform(1.0, 2.0))
                     try:
@@ -1088,6 +1090,7 @@ class JobCollector:
                         pass
 
                 captcha_detection = self._is_captcha_page(self.page)
+                logger.debug("_safe_goto: captcha_detection=%s", captcha_detection)
                 if captcha_detection:
                     # Wait for JS challenge to resolve - "Just a moment..." may auto-pass
                     if "just a moment" in (captcha_detection.get("title") or "").lower():
@@ -1104,6 +1107,14 @@ class JobCollector:
                                 break
                         else:
                             logger.warning("JS challenge did not auto-resolve after 12s")
+                            # Try clicking Turnstile checkbox if present
+                            if self._try_click_turnstile():
+                                time.sleep(3)
+                                captcha_detection = self._is_captcha_page(self.page)
+                                if not captcha_detection:
+                                    logger.info("Turnstile click resolved challenge!")
+                                    self.captcha_consecutive = 0
+                                    return True
 
                 if captcha_detection:
                     self.captcha_consecutive += 1
@@ -1162,6 +1173,56 @@ class JobCollector:
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
                 self._random_delay()
         return False
+
+    def _try_click_turnstile(self) -> bool:
+        """Attempt to click Turnstile checkbox to complete verification."""
+        try:
+            # Try multiple selectors for Turnstile checkbox
+            selectors = [
+                "iframe[src*='challenges.cloudflare.com']",
+                "iframe[src*='turnstile']",
+                ".cf-turnstile iframe",
+                "iframe[title*='challenge']",
+            ]
+            for selector in selectors:
+                iframe = self.page.query_selector(selector)
+                if iframe:
+                    logger.info("Found Turnstile iframe: %s", selector)
+                    try:
+                        # Click in the center of the iframe (checkbox location)
+                        box = iframe.bounding_box()
+                        if box:
+                            # Checkbox is usually in the left part of the iframe
+                            click_x = box["x"] + 30
+                            click_y = box["y"] + box["height"] / 2
+                            logger.info("Clicking Turnstile at (%d, %d)", click_x, click_y)
+                            self.page.mouse.click(click_x, click_y)
+                            time.sleep(2)
+                            return True
+                    except Exception as click_exc:
+                        logger.debug("Failed to click Turnstile: %s", click_exc)
+
+            # Fallback: try to find and click any visible checkbox in verification area
+            checkbox_selectors = [
+                "input[type='checkbox']",
+                "[role='checkbox']",
+                ".checkbox",
+            ]
+            for selector in checkbox_selectors:
+                checkbox = self.page.query_selector(selector)
+                if checkbox:
+                    try:
+                        if checkbox.is_visible():
+                            logger.info("Clicking checkbox: %s", selector)
+                            checkbox.click()
+                            time.sleep(2)
+                            return True
+                    except Exception:
+                        pass
+            return False
+        except Exception as exc:
+            logger.debug("Turnstile click attempt failed: %s", exc)
+            return False
 
     def _should_try_flaresolverr(self, detection: Optional[dict]) -> bool:
         if not detection or not self.flaresolverr:
