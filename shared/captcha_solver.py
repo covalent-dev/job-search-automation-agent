@@ -16,17 +16,22 @@ class CaptchaSolver:
     """
     High-level captcha solver wrapper for Playwright pages.
 
-    Wraps TwoCaptchaSolver and provides:
+    Supports multiple providers:
+    - 2captcha (default)
+    - capsolver
+
+    Provides:
     - available() - check if solver is configured
     - solve_if_present(page, detection) - detect captcha type and solve it
     """
 
     def __init__(self, config: Any):
         self.config = config
-        self._solver: Optional["TwoCaptchaSolver"] = None
+        self._solver: Optional[Any] = None
         self._enabled = False
         self._timeout = 120
         self._max_retries = 2
+        self._provider = "2captcha"
 
         captcha_config = {}
         if hasattr(config, "get_captcha_config"):
@@ -38,11 +43,16 @@ class CaptchaSolver:
         api_key = (captcha_config.get("api_key") or "").strip()
         self._timeout = int(captcha_config.get("timeout", 120))
         self._max_retries = int(captcha_config.get("max_retries", 2))
+        self._provider = (captcha_config.get("provider") or "2captcha").strip().lower()
 
         if self._enabled and api_key:
             try:
-                self._solver = TwoCaptchaSolver(api_key=api_key)
-                logger.info("CaptchaSolver initialized (provider=2captcha)")
+                if self._provider == "capsolver":
+                    self._solver = CapSolverSolver(api_key=api_key)
+                    logger.info("CaptchaSolver initialized (provider=capsolver)")
+                else:
+                    self._solver = TwoCaptchaSolver(api_key=api_key)
+                    logger.info("CaptchaSolver initialized (provider=2captcha)")
             except Exception as e:
                 logger.warning("Failed to initialize captcha solver: %s", e)
                 self._enabled = False
@@ -583,4 +593,204 @@ class TwoCaptchaSolver:
             raise CaptchaSolveError("2captcha returned invalid JSON") from exc
         if not isinstance(data, dict):
             raise CaptchaSolveError("2captcha returned unexpected response shape")
+        return data
+
+
+class CapSolverSolver:
+    """
+    CapSolver API wrapper for Turnstile, hCaptcha, and reCAPTCHA.
+
+    CapSolver often has better success rates for Cloudflare challenges.
+    API docs: https://docs.capsolver.com/
+    """
+
+    provider = "capsolver"
+
+    def __init__(self, api_key: str, base_url: str = "https://api.capsolver.com"):
+        api_key = (api_key or "").strip()
+        if not api_key:
+            raise ValueError("capsolver api_key is required")
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+
+    def solve_turnstile(
+        self,
+        *,
+        sitekey: str,
+        page_url: str,
+        user_agent: Optional[str] = None,
+        action: Optional[str] = None,
+        data: Optional[str] = None,
+        timeout_seconds: int = 180,
+        poll_interval_seconds: int = 3,
+    ) -> str:
+        sitekey = (sitekey or "").strip()
+        page_url = (page_url or "").strip()
+        if not sitekey:
+            raise ValueError("turnstile sitekey is required")
+        if not page_url:
+            raise ValueError("turnstile page_url is required")
+
+        task = {
+            "type": "AntiTurnstileTaskProxyLess",
+            "websiteURL": page_url,
+            "websiteKey": sitekey,
+        }
+        if action:
+            task["metadata"] = {"action": action}
+        if data:
+            task["metadata"] = task.get("metadata", {})
+            task["metadata"]["cdata"] = data
+
+        task_id = self._create_task(task)
+        return self._poll_until_solved(
+            task_id=task_id,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+    def solve_hcaptcha(
+        self,
+        *,
+        sitekey: str,
+        page_url: str,
+        timeout_seconds: int = 180,
+        poll_interval_seconds: int = 3,
+    ) -> str:
+        sitekey = (sitekey or "").strip()
+        page_url = (page_url or "").strip()
+        if not sitekey:
+            raise ValueError("hcaptcha sitekey is required")
+        if not page_url:
+            raise ValueError("hcaptcha page_url is required")
+
+        task = {
+            "type": "HCaptchaTaskProxyLess",
+            "websiteURL": page_url,
+            "websiteKey": sitekey,
+        }
+
+        task_id = self._create_task(task)
+        return self._poll_until_solved(
+            task_id=task_id,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+    def solve_recaptcha_v2(
+        self,
+        *,
+        sitekey: str,
+        page_url: str,
+        invisible: Optional[bool] = None,
+        timeout_seconds: int = 180,
+        poll_interval_seconds: int = 3,
+    ) -> str:
+        sitekey = (sitekey or "").strip()
+        page_url = (page_url or "").strip()
+        if not sitekey:
+            raise ValueError("recaptcha sitekey is required")
+        if not page_url:
+            raise ValueError("recaptcha page_url is required")
+
+        task = {
+            "type": "ReCaptchaV2TaskProxyLess",
+            "websiteURL": page_url,
+            "websiteKey": sitekey,
+        }
+        if invisible:
+            task["isInvisible"] = True
+
+        task_id = self._create_task(task)
+        return self._poll_until_solved(
+            task_id=task_id,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+    def _create_task(self, task: dict) -> str:
+        payload = {
+            "clientKey": self._api_key,
+            "task": task,
+        }
+        resp = self._post_json("/createTask", payload)
+
+        error_id = resp.get("errorId", 0)
+        if error_id != 0:
+            error_desc = resp.get("errorDescription", "Unknown error")
+            raise CaptchaSolveError(f"capsolver createTask error: {error_desc}")
+
+        task_id = resp.get("taskId")
+        if not task_id:
+            raise CaptchaSolveError("capsolver createTask returned no taskId")
+        return str(task_id)
+
+    def _poll_until_solved(
+        self,
+        *,
+        task_id: str,
+        timeout_seconds: int,
+        poll_interval_seconds: int,
+    ) -> str:
+        deadline = time.monotonic() + max(int(timeout_seconds), 1)
+        poll_interval = max(float(poll_interval_seconds), 1.0)
+
+        while time.monotonic() < deadline:
+            result = self._get_task_result(task_id=task_id)
+            if result is not None:
+                return result
+            time.sleep(poll_interval)
+
+        raise CaptchaSolveError("capsolver timed out waiting for solution")
+
+    def _get_task_result(self, *, task_id: str) -> Optional[str]:
+        payload = {
+            "clientKey": self._api_key,
+            "taskId": task_id,
+        }
+        resp = self._post_json("/getTaskResult", payload)
+
+        error_id = resp.get("errorId", 0)
+        if error_id != 0:
+            error_desc = resp.get("errorDescription", "Unknown error")
+            raise CaptchaSolveError(f"capsolver getTaskResult error: {error_desc}")
+
+        status = resp.get("status", "")
+        if status == "ready":
+            solution = resp.get("solution", {})
+            # Turnstile returns 'token', hCaptcha/reCAPTCHA return 'gRecaptchaResponse'
+            token = solution.get("token") or solution.get("gRecaptchaResponse")
+            if not token:
+                raise CaptchaSolveError("capsolver returned empty token")
+            return token.strip()
+        elif status == "processing":
+            return None
+        else:
+            raise CaptchaSolveError(f"capsolver unexpected status: {status}")
+
+    def _post_json(self, path: str, payload: dict) -> dict:
+        url = f"{self._base_url}{path}"
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                text = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            text = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else ""
+            raise CaptchaSolveError(f"capsolver HTTP {e.code}: {text[:200]}") from e
+        except urllib.error.URLError as e:
+            raise CaptchaSolveError(f"capsolver connection error: {e}") from e
+
+        try:
+            data = json.loads(text)
+        except Exception as exc:
+            raise CaptchaSolveError(f"capsolver returned invalid JSON: {text[:200]}") from exc
+
+        if not isinstance(data, dict):
+            raise CaptchaSolveError("capsolver returned unexpected response shape")
         return data

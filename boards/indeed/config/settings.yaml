@@ -157,10 +157,12 @@ proxy:
   endpoints: []
   rotate_on_captcha_consecutive: 2
 
+# CapSolver has better success rates for Cloudflare challenges than 2captcha.
+# Set provider to "capsolver" and use CAPSOLVER_API_KEY.
 captcha:
   enabled: true
-  provider: 2captcha
-  api_key: "${CAPTCHA_API_KEY}"
+  provider: capsolver
+  api_key: "${CAPSOLVER_API_KEY}"
   timeout: 120
   max_retries: 2
   backoff_base_seconds: 60
