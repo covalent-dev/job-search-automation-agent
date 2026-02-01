@@ -1,17 +1,18 @@
 search:
   keywords:
   - AI engineer
-  - AI/ML engineer
-  - machine learning engineer
-  - AI systems engineer
-  - AI infrastructure engineer
-  - AI platform engineer
-  - MLOps engineer
-  - LLM engineer
-  - LLMOps engineer
-  - RAG engineer
-  - generative AI engineer
-  - AI automation engineer
+#  - AI engineer
+#  - AI/ML engineer
+#  - machine learning engineer
+#  - AI systems engineer
+#  - AI infrastructure engineer
+#  - AI platform engineer
+#  - MLOps engineer
+#  - LLM engineer
+#  - LLMOps engineer
+#  - RAG engineer
+#  - generative AI engineer
+#  - AI automation engineer
   location: Remote
   max_results_per_search: 10
   max_pages: 2
@@ -89,57 +90,60 @@ ai_filter:
   debug: false
 post_run:
   include_keywords:
-  - ai
-  - ml
-  - machine learning
-  - deep learning
-  - llm
-  - rag
-  - mlops
-  - genai
-  - generative ai
-  - ai engineer
-  - ai/ml
-  - ai systems
-  - ai infrastructure
-  - ai platform
+  - AI engineer
+#  - ai
+#  - ml
+#  - machine learning
+#  - deep learning
+#  - llm
+#  - rag
+#  - mlops
+#  - genai
+#  - generative ai
+#  - ai engineer
+#  - ai/ml
+#  - ai systems
+#  - ai infrastructure
+#  - ai platform
   title_role_keywords:
-  - engineer
-  - scientist
-  - research
-  - ml
-  - ai
-  - data
-  - mlops
-  - llm
-  - nlp
-  - vision
+  - AI engineer
+#  - engineer
+#  - scientist
+#  - research
+#  - ml
+#  - ai
+#  - data
+#  - mlops
+#  - llm
+#  - nlp
+#  - vision
   exclude_keywords:
-  - director
-  - vp
-  - therapist
-  - nurse
-  - physician
-  - medical
-  - clinical
-  - patient
-  - accountant
-  - bookkeeper
-  - payroll
-  - customer service
-  - call center
-  - sales
-  - retail
-  - teacher
-  - interpreter
-  - underwriter
-  - claims
-  - tax
-  - preparer
-  - accounting
-  - simulation
-  - mbse
-  - jlvc
+  - AI engineer
+#  - director
+#  - vp
+#  - therapist
+#  - nurse
+#  - physician
+#  - medical
+#  - clinical
+#  - patient
+#  - accountant
+#  - bookkeeper
+#  - payroll
+#  - customer service
+#  - call center
+#  - sales
+#  - retail
+#  - teacher
+#  - interpreter
+#  - underwriter
+#  - claims
+#  - tax
+#  - preparer
+#  - accounting
+#  - simulation
+#  - mbse
+#  - jlvc
   min_ai_score: 0
   top_n: 0
 dedupe:
@@ -152,7 +156,7 @@ logging:
 # Proxy disabled: Glassdoor challenges are more aggressive through proxy IPs.
 # FlareSolverr works better when Playwright uses the same direct IP.
 proxy:
-  enabled: false
+  enabled: true
   provider: http
   server: "http://${PROXY_HOST}:${PROXY_PORT}"
   username: "${PROXY_USERNAME}"
@@ -179,4 +183,4 @@ flaresolverr:
   enabled: true
   url: "http://localhost:8191"
   timeout: 60
-  use_proxy: false
+  use_proxy: true

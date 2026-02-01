@@ -38,7 +38,7 @@ output:
     vault_path: /root/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/indeed
 browser:
   # Indeed is frequently hostile to headless automation; run headed under Xvfb for baseline tests.
-  headless: false
+  headless: true
   min_delay: 2.0
   max_delay: 5.0
   page_timeout: 30

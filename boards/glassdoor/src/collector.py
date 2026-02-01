@@ -1174,6 +1174,11 @@ class JobCollector:
     def _try_click_turnstile(self) -> bool:
         """Attempt to click Turnstile checkbox to complete verification."""
         try:
+            # Safety check
+            if not self.page:
+                logger.warning("No page available for Turnstile click")
+                return False
+                
             # Wait for Turnstile iframe to be created (it's loaded dynamically)
             selectors = [
                 "iframe[src*='challenges.cloudflare.com']",
@@ -1183,9 +1188,10 @@ class JobCollector:
             ]
             logger.info("Looking for Turnstile iframe...")
 
-            # Give Turnstile time to load (up to 10s)
+            # Give Turnstile time to load (up to 15s)
             iframe = None
-            for wait in range(10):
+            for wait in range(15):
+                logger.debug("Turnstile check attempt %d/15", wait + 1)
                 for selector in selectors:
                     iframe = self.page.query_selector(selector)
                     if iframe:
@@ -1207,11 +1213,36 @@ class JobCollector:
                         logger.info("Clicking Turnstile at (%.0f, %.0f)", click_x, click_y)
                         self.page.mouse.click(click_x, click_y)
                         time.sleep(3)
-                        return True
+                        
+                        # Also try to switch to iframe context and click inside
+                        try:
+                            frame = iframe.content_frame()
+                            if frame:
+                                logger.debug("Switching to Turnstile iframe context")
+                                # Try to find and click checkbox inside iframe
+                                checkbox = frame.query_selector("input[type='checkbox'], [role='checkbox']")
+                                if checkbox:
+                                    logger.info("Clicking checkbox inside Turnstile iframe")
+                                    checkbox.click()
+                                    time.sleep(2)
+                        except Exception as frame_exc:
+                            logger.debug("Could not interact with iframe content: %s", frame_exc)
+                            
+                        # Check if challenge was resolved
+                        time.sleep(2)
+                        new_title = (self.page.title() or "").lower()
+                        if "just a moment" not in new_title:
+                            logger.info("Turnstile click successful! Challenge resolved.")
+                            return True
+                        else:
+                            logger.warning("Turnstile click didn't resolve challenge")
+                            return False
                     else:
                         logger.debug("Turnstile iframe has no bounding box")
+                        return False
                 except Exception as click_exc:
                     logger.debug("Failed to click Turnstile: %s", click_exc)
+                    return False
             else:
                 logger.debug("No Turnstile iframe found after waiting")
 
