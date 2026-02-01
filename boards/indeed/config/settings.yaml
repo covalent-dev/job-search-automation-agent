@@ -176,8 +176,9 @@ cloudflare:
   enabled: true
   session_persistence: true
   turnstile_solving: true
-  min_delay_between_queries: 5.0
-  max_delay_between_queries: 15.0
+  # Longer delays between keyword queries to avoid rate limiting (30-60s recommended)
+  min_delay_between_queries: 30.0
+  max_delay_between_queries: 60.0
   warmup_delay: 3.0
   jitter_factor: 0.3
   flaresolverr_url: ""
