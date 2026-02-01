@@ -171,7 +171,6 @@ captcha:
 
 flaresolverr:
   enabled: true
-  enabled: true
   url: "http://localhost:8191"
   timeout: 60
   use_proxy: true
