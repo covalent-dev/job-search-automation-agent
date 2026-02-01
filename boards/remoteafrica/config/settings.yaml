@@ -131,14 +131,15 @@ post_run:
   min_ai_score: 0
   top_n: 0
 dedupe:
-  enabled: false
+  enabled: true
   hash_file: output/dedupe_hashes.jsonl
 logging:
   level: INFO
   log_file: logs/job_bot_{timestamp}.log
 
 flaresolverr:
-  enabled: false
+  enabled: true
+  enabled: true
   url: "http://localhost:8191"
   timeout: 60
   use_proxy: true

@@ -170,7 +170,8 @@ captcha:
   backoff_max_seconds: 300
 
 flaresolverr:
-  enabled: false
+  enabled: true
+  enabled: true
   url: "http://localhost:8191"
   timeout: 60
   use_proxy: true
