@@ -13,45 +13,77 @@ search:
   - generative AI engineer
   - AI automation engineer
   location: Remote
-  max_results_per_search: 10
-  max_pages: 2
-  # Integration testing: keep runs bounded; salary detail fetch can add ~minutes per query.
+  max_results_per_search: 50
+  max_pages: 5
   detail_salary_fetch: false
-  detail_salary_timeout: 9
-  detail_salary_retries: 1
-  detail_salary_max_per_query: 0
-  detail_salary_delay_min: 1.5
-  detail_salary_delay_max: 2.5
-  # Integration testing: avoid interactive captcha prompts during detail fetches.
   detail_description_fetch: true
-  detail_description_timeout: 12
-  detail_description_retries: 1
+  detail_description_timeout: 15
+  detail_description_retries: 2
   detail_description_max_per_query: 0
-  detail_description_delay_min: 1.5
-  detail_description_delay_max: 2.5
+  detail_description_delay_min: 2.0
+  detail_description_delay_max: 4.0
   job_boards:
-  - glassdoor
+  - indeed
+
 output:
   json_file: output/jobs_{timestamp}.json
   markdown_file: output/jobs_{timestamp}.md
-  summary_file: output/run_summary_{timestamp}.json
-  config_snapshot_file: output/config_snapshot_{timestamp}.yaml
   use_timestamp: true
   vault_sync:
     enabled: true
-    vault_path: /root/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/glassdoor
+    vault_path: /root/Taxman_Progression_v4/05_Knowledge_Base/Job-Market-Data/indeed
+
 browser:
-  headless: true
-  min_delay: 1.0
-  max_delay: 3.0
-  page_timeout: 15
-  navigation_timeout: 20
-  launch_timeout: 30
-  max_retries: 2
+  headless: false
+  min_delay: 1.5
+  max_delay: 3.5
+  page_timeout: 20
+  navigation_timeout: 30
+  launch_timeout: 45
+  max_retries: 3
   channel: ''
   executable_path: ''
   use_stealth: true
   use_undetected: true
+
+proxy:
+  enabled: true
+  provider: http
+  server: "http://${PROXY_HOST}:${PROXY_PORT}"
+  username: "${PROXY_USERNAME}"
+  password: "${PROXY_PASSWORD}"
+  sticky: true
+  session_param: session
+  session_ttl: 1800
+  pool_size: 4
+  endpoints: []
+  rotate_on_captcha_consecutive: 2
+
+captcha:
+  enabled: true
+  provider: 2captcha
+  api_key: "${CAPTCHA_API_KEY}"
+  timeout: 120
+  max_retries: 2
+  backoff_base_seconds: 60
+  backoff_max_seconds: 300
+
+flaresolverr:
+  enabled: false
+  url: "http://localhost:8191"
+  timeout: 60
+  use_proxy: true
+
+cloudflare:
+  enabled: true
+  session_persistence: true
+  turnstile_solving: true
+  min_delay_between_queries: 8.0
+  max_delay_between_queries: 15.0
+  warmup_delay: 5.0
+  jitter_factor: 0.3
+  flaresolverr_url: ""
+
 ai_filter:
   enabled: true
   backend: groq
@@ -85,6 +117,11 @@ ai_filter:
   max_reasoning_chars: 80
   include_reasoning: true
   debug: false
+
+dedupe:
+  enabled: false
+  hash_file: ""
+
 post_run:
   include_keywords:
   - ai
@@ -140,37 +177,7 @@ post_run:
   - jlvc
   min_ai_score: 0
   top_n: 0
-dedupe:
-  enabled: true
-  hash_file: output/dedupe_hashes.jsonl
+
 logging:
   level: INFO
-  log_file: logs/job_bot_{timestamp}.log
-
-proxy:
-  enabled: true
-  provider: http
-  server: "http://${PROXY_HOST}:${PROXY_PORT}"
-  username: "${PROXY_USERNAME}"
-  password: "${PROXY_PASSWORD}"
-  sticky: true
-  session_param: session
-  session_ttl: 1800
-  pool_size: 4
-  endpoints: []
-  rotate_on_captcha_consecutive: 2
-
-captcha:
-  enabled: true
-  provider: 2captcha
-  api_key: "${CAPTCHA_API_KEY}"
-  timeout: 120
-  max_retries: 2
-  backoff_base_seconds: 60
-  backoff_max_seconds: 300
-
-flaresolverr:
-  enabled: false
-  url: "http://localhost:8191"
-  timeout: 60
-  use_proxy: true
+  log_file: logs/full_run_{timestamp}.log

@@ -173,6 +173,12 @@ captcha:
   backoff_base_seconds: 60
   backoff_max_seconds: 300
 
+flaresolverr:
+  enabled: false
+  url: "http://localhost:8191"
+  timeout: 60
+  use_proxy: true
+
 # (Note) This file previously had a duplicate top-level `search:` key at the end,
 # which would override the main search config in YAML parsers. Keep all search
 # settings in the primary `search:` block above.

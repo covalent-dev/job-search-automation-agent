@@ -80,6 +80,23 @@ captcha:
   policy: solve  # skip | abort | pause | solve
 ```
 
+### FlareSolverr (Optional, Cloudflare JS challenges)
+FlareSolverr can solve Cloudflare "Just a moment..." style JS challenges and return cookies + a user agent that the bot injects into the Playwright context.
+
+Run FlareSolverr (example):
+```bash
+docker run --rm -p 8191:8191 flaresolverr/flaresolverr:latest
+```
+
+Enable in board config:
+```yaml
+flaresolverr:
+  enabled: true
+  url: "http://localhost:8191"
+  timeout: 60
+  use_proxy: true
+```
+
 ### Stealth Mode
 Both Indeed and Glassdoor collectors have built-in stealth infrastructure:
 - Browser fingerprint spoofing

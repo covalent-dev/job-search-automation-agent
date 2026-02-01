@@ -188,9 +188,19 @@ class CloudflareBypass:
         self.max_delay = float(cf_config.get("max_delay_between_queries", 8.0))
         self.warmup_delay = float(cf_config.get("warmup_delay", 2.0))
         self.jitter_factor = float(cf_config.get("jitter_factor", 0.3))
-        self.flaresolverr_url = (cf_config.get("flaresolverr_url") or "").strip()
         self.session_persistence = bool(cf_config.get("session_persistence", True))
         self.turnstile_solving = bool(cf_config.get("turnstile_solving", True))
+
+        # Backwards-compat: older configs stored FlareSolverr URL under cloudflare.flaresolverr_url
+        legacy_url = (cf_config.get("flaresolverr_url") or "").strip()
+
+        fs_config: Dict[str, Any] = {}
+        if self.config and hasattr(self.config, "get"):
+            fs_config = self.config.get("flaresolverr", {}) or {}
+
+        self.flaresolverr_enabled = bool(fs_config.get("enabled", False))
+        self.flaresolverr_url = (fs_config.get("url") or legacy_url or "").strip()
+        self.flaresolverr_timeout = int(fs_config.get("timeout", 60) or 60)
 
     def get_stealth_args(self) -> List[str]:
         """Get browser launch arguments for stealth mode."""
@@ -381,109 +391,53 @@ class CloudflareBypass:
         logger.warning("Cloudflare challenge did not clear within timeout")
         return False
 
+    def get_flaresolverr(self):
+        """
+        Return a configured FlareSolverr client if enabled, else None.
 
-class FlareSolverr:
-    """
-    Optional FlareSolverr integration for solving Cloudflare challenges.
-
-    FlareSolverr must be running (typically via Docker) at the configured URL.
-    """
-
-    def __init__(self, url: str = "http://localhost:8191"):
-        self.url = url.rstrip("/")
-        self._available: Optional[bool] = None
-
-    def is_available(self) -> bool:
-        """Check if FlareSolverr is running and accessible."""
-        if self._available is not None:
-            return self._available
+        Callers must still check availability via client.is_available().
+        """
+        if not self.flaresolverr_enabled or not self.flaresolverr_url:
+            return None
 
         try:
-            import urllib.request
-            import json
-
-            req = urllib.request.Request(
-                f"{self.url}/health",
-                method="GET",
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self._available = data.get("status") == "ok"
+            from flaresolverr import FlareSolverr
         except Exception:
-            self._available = False
-
-        return self._available
-
-    def solve(self, target_url: str, max_timeout: int = 60000) -> Optional[Dict[str, Any]]:
-        """
-        Solve Cloudflare challenge via FlareSolverr.
-
-        Args:
-            target_url: URL to access
-            max_timeout: Maximum timeout in milliseconds
-
-        Returns:
-            Dict with 'cookies' and 'user_agent' on success, None on failure
-        """
-        if not self.is_available():
             return None
 
+        return FlareSolverr(url=self.flaresolverr_url, timeout=self.flaresolverr_timeout)
+
+    @staticmethod
+    def _user_agent_override_script(user_agent: str) -> str:
+        ua = user_agent.replace("\\", "\\\\").replace("'", "\\'")
+        return (
+            "Object.defineProperty(navigator, 'userAgent', {get: () => '" + ua + "'});\n"
+            "Object.defineProperty(navigator, 'appVersion', {get: () => '" + ua + "'});\n"
+        )
+
+    def inject_flaresolverr_solution(self, context: Any, *, cookies: List[Dict[str, Any]], user_agent: str) -> None:
+        """
+        Inject FlareSolverr solution into a Playwright context.
+
+        Best-effort:
+        - Adds cookies to context
+        - Aligns User-Agent via extra headers + navigator override
+        """
         try:
-            import urllib.request
-            import json
+            from flaresolverr import flaresolverr_cookies_to_playwright
 
-            payload = json.dumps({
-                "cmd": "request.get",
-                "url": target_url,
-                "maxTimeout": max_timeout,
-            }).encode("utf-8")
+            pw_cookies = flaresolverr_cookies_to_playwright(cookies)
+            if pw_cookies:
+                context.add_cookies(pw_cookies)
+        except Exception as exc:
+            logger.debug("Failed to inject FlareSolverr cookies (non-critical): %s", exc)
 
-            req = urllib.request.Request(
-                f"{self.url}/v1",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-
-            with urllib.request.urlopen(req, timeout=max_timeout // 1000 + 30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-
-            if data.get("status") == "ok":
-                solution = data.get("solution", {})
-                return {
-                    "cookies": solution.get("cookies", []),
-                    "user_agent": solution.get("userAgent", ""),
-                }
-
-            logger.warning("FlareSolverr returned status: %s", data.get("status"))
-            return None
-
-        except Exception as e:
-            logger.warning("FlareSolverr failed: %s", e)
-            return None
-
-    def get_cookies_for_playwright(self, target_url: str) -> Optional[List[Dict[str, Any]]]:
-        """
-        Get cookies in Playwright-compatible format.
-
-        Returns:
-            List of cookie dicts for browser.new_context(storage_state=...)
-        """
-        result = self.solve(target_url)
-        if not result:
-            return None
-
-        cookies = []
-        for cookie in result.get("cookies", []):
-            cookies.append({
-                "name": cookie.get("name"),
-                "value": cookie.get("value"),
-                "domain": cookie.get("domain"),
-                "path": cookie.get("path", "/"),
-                "expires": cookie.get("expiry", -1),
-                "httpOnly": cookie.get("httpOnly", False),
-                "secure": cookie.get("secure", False),
-                "sameSite": cookie.get("sameSite", "Lax"),
-            })
-
-        return cookies if cookies else None
+        if user_agent:
+            try:
+                context.set_extra_http_headers({"User-Agent": user_agent})
+            except Exception:
+                pass
+            try:
+                context.add_init_script(self._user_agent_override_script(user_agent))
+            except Exception:
+                pass
