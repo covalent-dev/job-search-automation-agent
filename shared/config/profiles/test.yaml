@@ -1,0 +1,41 @@
+# Profile: test
+# Quick iterations, debugging - minimal delays, no stealth
+# Use: ./scripts/run_board.sh <board> --profile test
+
+browser:
+  headless: true
+  min_delay: 0.3
+  max_delay: 1.0
+  page_timeout: 10
+  navigation_timeout: 15
+  max_retries: 1
+
+search:
+  max_results_per_search: 10
+  max_pages: 1
+  detail_description_fetch: false
+  detail_description_max_per_query: 3
+  detail_salary_fetch: false
+
+cloudflare:
+  min_delay_between_queries: 2.0
+  max_delay_between_queries: 5.0
+  session_persistence: false
+
+proxy:
+  enabled: false
+
+captcha:
+  enabled: false
+
+flaresolverr:
+  enabled: false
+
+ai_filter:
+  enabled: false
+
+dedupe:
+  enabled: false
+
+logging:
+  level: DEBUG

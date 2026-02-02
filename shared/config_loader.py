@@ -3,17 +3,58 @@
 Configuration loader for Job Bot
 Reads and validates settings.yaml
 Supports environment variable expansion: ${VAR} or $VAR
+Supports config profiles: test, medium, production
 """
 
 import os
 import re
 import yaml
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Available profiles
+PROFILES = ["test", "medium", "production"]
+DEFAULT_PROFILE = "medium"
+
+# Profile directory relative to this file
+PROFILE_DIR = Path(__file__).parent / "config" / "profiles"
+
+
+def _deep_merge(base: Dict, override: Dict) -> Dict:
+    """
+    Deep merge override into base dict.
+    Override values take precedence.
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _load_profile(profile_name: str) -> Dict[str, Any]:
+    """Load a profile YAML file."""
+    if profile_name not in PROFILES:
+        logger.warning(f"Unknown profile '{profile_name}', using '{DEFAULT_PROFILE}'")
+        profile_name = DEFAULT_PROFILE
+
+    profile_path = PROFILE_DIR / f"{profile_name}.yaml"
+    if not profile_path.exists():
+        logger.warning(f"Profile file not found: {profile_path}")
+        return {}
+
+    try:
+        with open(profile_path, 'r') as f:
+            return yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing profile {profile_name}: {e}")
+        return {}
 
 
 def _load_dotenv():
@@ -57,27 +98,39 @@ def _expand_config(config):
 
 
 class ConfigLoader:
-    """Loads and validates configuration from YAML file"""
-    
-    def __init__(self, config_path: str = "config/settings.yaml"):
+    """Loads and validates configuration from YAML file with profile support"""
+
+    def __init__(self, config_path: str = "config/settings.yaml", profile: Optional[str] = None):
         self.config_path = Path(config_path)
         self.config: Dict[str, Any] = {}
+        self.profile = profile or os.environ.get("JOB_BOT_PROFILE", DEFAULT_PROFILE)
         self._load()
-    
+
     def _load(self) -> None:
-        """Load config from YAML file with env var expansion"""
+        """Load config from YAML file with profile merge and env var expansion"""
         # Load .env first
         _load_dotenv()
-        
+
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
-        
+
         try:
+            # 1. Load profile as base (if not 'none')
+            if self.profile and self.profile.lower() != "none":
+                profile_config = _load_profile(self.profile)
+                self.config = profile_config
+                logger.info(f"✓ Loaded profile: {self.profile}")
+
+            # 2. Load board-specific config and merge (board settings override profile)
             with open(self.config_path, 'r') as f:
-                self.config = yaml.safe_load(f)
-            # Expand environment variables in all string values
+                board_config = yaml.safe_load(f) or {}
+
+            # Merge: profile < board (board wins)
+            self.config = _deep_merge(self.config, board_config)
+
+            # 3. Expand environment variables in all string values
             self.config = _expand_config(self.config)
-            logger.info(f"✓ Config loaded from {self.config_path}")
+            logger.info(f"✓ Config loaded from {self.config_path} (profile={self.profile})")
         except yaml.YAMLError as e:
             logger.error(f"Error parsing config file: {e}")
             raise
@@ -334,6 +387,15 @@ class ConfigLoader:
 
 
 # Convenience function
-def load_config(config_path: str = "config/settings.yaml") -> ConfigLoader:
-    """Load configuration from file"""
-    return ConfigLoader(config_path)
+def load_config(config_path: str = "config/settings.yaml", profile: Optional[str] = None) -> ConfigLoader:
+    """
+    Load configuration from file with optional profile.
+
+    Profiles: test, medium (default), production
+    Set via: --profile flag, JOB_BOT_PROFILE env var, or profile parameter
+
+    Args:
+        config_path: Path to board's settings.yaml
+        profile: Profile name (test/medium/production) or None for env/default
+    """
+    return ConfigLoader(config_path, profile=profile)

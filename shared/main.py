@@ -46,6 +46,8 @@ def display_config(config) -> None:
     print("🤖 JOB SEARCH AUTOMATION v0.1")
     print("="*60)
 
+    print(f"\n🎚️  Profile: {config.profile}")
+
     print("\n📋 SEARCH PARAMETERS:")
     keywords = config.get_keywords()
     for i, keyword in enumerate(keywords, 1):
@@ -112,6 +114,12 @@ def parse_args() -> argparse.Namespace:
         default="config/settings.yaml",
         help="Path to config YAML",
     )
+    parser.add_argument(
+        "--profile",
+        choices=["test", "medium", "production", "none"],
+        default=None,
+        help="Config profile (test/medium/production). Default: medium or JOB_BOT_PROFILE env var",
+    )
     return parser.parse_args()
 
 
@@ -122,7 +130,7 @@ def main():
 
     # Load configuration
     try:
-        config = load_config(args.config)
+        config = load_config(args.config, profile=args.profile)
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
         print("Make sure config/settings.yaml exists!")

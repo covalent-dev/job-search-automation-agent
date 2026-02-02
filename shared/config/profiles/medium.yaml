@@ -1,0 +1,48 @@
+# Profile: medium
+# Daily runs, balanced - moderate stealth, reasonable speed
+# Use: ./scripts/run_board.sh <board> --profile medium (default)
+
+browser:
+  headless: true
+  min_delay: 1.0
+  max_delay: 3.0
+  page_timeout: 15
+  navigation_timeout: 20
+  max_retries: 2
+  use_stealth: true
+
+search:
+  max_results_per_search: 50
+  max_pages: 3
+  detail_description_fetch: true
+  detail_description_max_per_query: 20
+  detail_description_delay_min: 2.0
+  detail_description_delay_max: 5.0
+  detail_salary_fetch: false
+
+cloudflare:
+  enabled: true
+  min_delay_between_queries: 8.0
+  max_delay_between_queries: 15.0
+  session_persistence: true
+  jitter_factor: 0.2
+
+proxy:
+  enabled: true
+  rotate_on_captcha_consecutive: 2
+
+captcha:
+  enabled: true
+
+flaresolverr:
+  enabled: true
+  timeout: 60
+
+ai_filter:
+  enabled: true
+
+dedupe:
+  enabled: true
+
+logging:
+  level: INFO

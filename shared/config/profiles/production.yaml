@@ -1,0 +1,59 @@
+# Profile: production
+# 24/7 async operation - maximum stealth, slow and steady
+# Use: ./scripts/run_board.sh <board> --profile production
+
+browser:
+  headless: true
+  min_delay: 2.0
+  max_delay: 5.0
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 3
+  use_stealth: true
+  use_undetected: true
+
+search:
+  max_results_per_search: 100
+  max_pages: 5
+  detail_description_fetch: true
+  detail_description_max_per_query: 0  # unlimited
+  detail_description_delay_min: 5.0
+  detail_description_delay_max: 10.0
+  detail_salary_fetch: true
+  detail_salary_max_per_query: 0  # unlimited
+  detail_salary_delay_min: 3.0
+  detail_salary_delay_max: 6.0
+
+cloudflare:
+  enabled: true
+  min_delay_between_queries: 30.0
+  max_delay_between_queries: 60.0
+  session_persistence: true
+  warmup_delay: 5.0
+  jitter_factor: 0.3
+
+proxy:
+  enabled: true
+  sticky: true
+  session_ttl: 3600  # 1 hour sessions
+  rotate_on_captcha_consecutive: 3
+
+captcha:
+  enabled: true
+  timeout: 180
+  max_retries: 3
+
+flaresolverr:
+  enabled: true
+  timeout: 90
+
+ai_filter:
+  enabled: true
+  include_reasoning: true
+
+dedupe:
+  enabled: true
+
+logging:
+  level: DEBUG
