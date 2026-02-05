@@ -16,6 +16,7 @@ from typing import List, Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
+from run_metrics import RunMetrics
 from proxy_manager import ProxyManager
 from captcha_solver import CaptchaSolver
 from captcha import install_turnstile_render_hook, solve_turnstile_on_page_capsolver
@@ -193,6 +194,7 @@ class JobCollector:
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
+        self.metrics = RunMetrics(board="glassdoor")
         self.proxy_manager = ProxyManager(config)
         self.captcha_solver = CaptchaSolver(config)
         self.flaresolverr = None
@@ -208,6 +210,14 @@ class JobCollector:
                 self.flaresolverr_use_proxy = bool(self.config.get("flaresolverr.use_proxy", True))
         except Exception:
             self.flaresolverr = None
+
+        try:
+            self.metrics.set_gauge("proxy_enabled", bool(self.config.get("proxy.enabled", False)))
+            self.metrics.set_gauge("proxy_provider", str(self.config.get("proxy.provider", "")))
+            self.metrics.set_gauge("captcha_solver_enabled", bool(self.config.get("captcha.enabled", False)))
+            self.metrics.set_gauge("captcha_provider", str(self.config.get("captcha.provider", "")))
+        except Exception:
+            pass
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -850,6 +860,18 @@ class JobCollector:
                         continue
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
+                    try:
+                        self.metrics.inc("captcha_encounters")
+                        self.metrics.inc("blocked_pages")
+                        self.metrics.record_event(
+                            "captcha",
+                            phase="detail_salary",
+                            reason=captcha_detection.get("reason"),
+                            title=captcha_detection.get("title"),
+                            url=captcha_detection.get("url"),
+                        )
+                    except Exception:
+                        pass
                     self.captcha_consecutive += 1
                     logger.warning(
                         "Detail salary fetch blocked by captcha (reason=%s, title=%s, url=%s)",
@@ -874,6 +896,10 @@ class JobCollector:
                         logger.info("Attempting to solve captcha on detail page...")
                         solved, reason = self.captcha_solver.solve_if_present(detail_page, detection=captcha_detection)
                         if solved:
+                            try:
+                                self.metrics.inc("captcha_solved")
+                            except Exception:
+                                pass
                             logger.info("Captcha solved autonomously!")
                             self.proxy_manager.record_captcha("glassdoor", solved=True)
                             self.captcha_consecutive = 0
@@ -881,6 +907,10 @@ class JobCollector:
                             time.sleep(3)
                             continue
                         else:
+                            try:
+                                self.metrics.inc("solver_failures")
+                            except Exception:
+                                pass
                             logger.warning("Captcha solver failed: %s", reason)
                             self.proxy_manager.record_captcha("glassdoor", solved=False)
 
@@ -1003,6 +1033,18 @@ class JobCollector:
                     pass
                 captcha_detection = self._is_captcha_page(detail_page)
                 if captcha_detection:
+                    try:
+                        self.metrics.inc("captcha_encounters")
+                        self.metrics.inc("blocked_pages")
+                        self.metrics.record_event(
+                            "captcha",
+                            phase="detail_description",
+                            reason=captcha_detection.get("reason"),
+                            title=captcha_detection.get("title"),
+                            url=captcha_detection.get("url"),
+                        )
+                    except Exception:
+                        pass
                     self.captcha_consecutive += 1
                     logger.warning(
                         "Detail description fetch blocked by captcha (reason=%s, title=%s, url=%s)",
@@ -1016,12 +1058,20 @@ class JobCollector:
                         logger.info("Attempting to solve captcha on detail description page...")
                         solved, reason = self.captcha_solver.solve_if_present(detail_page, detection=captcha_detection)
                         if solved:
+                            try:
+                                self.metrics.inc("captcha_solved")
+                            except Exception:
+                                pass
                             logger.info("Captcha solved autonomously!")
                             self.proxy_manager.record_captcha("glassdoor", solved=True)
                             self.captcha_consecutive = 0
                             time.sleep(3)
                             continue
                         else:
+                            try:
+                                self.metrics.inc("solver_failures")
+                            except Exception:
+                                pass
                             logger.warning("Captcha solver failed: %s", reason)
                             self.proxy_manager.record_captcha("glassdoor", solved=False)
 
@@ -1117,6 +1167,18 @@ class JobCollector:
                                     return True
 
                 if captcha_detection:
+                    try:
+                        self.metrics.inc("captcha_encounters")
+                        self.metrics.inc("blocked_pages")
+                        self.metrics.record_event(
+                            "captcha",
+                            phase="navigation",
+                            reason=captcha_detection.get("reason"),
+                            title=captcha_detection.get("title"),
+                            url=captcha_detection.get("url"),
+                        )
+                    except Exception:
+                        pass
                     self.captcha_consecutive += 1
                     logger.warning(
                         "Navigation blocked by captcha (attempt %s/%s, reason=%s, title=%s, url=%s)",
@@ -1135,6 +1197,11 @@ class JobCollector:
                         )
                         capsolver_attempted = bool(attempted)
                         if ok:
+                            try:
+                                self.metrics.inc("captcha_solved")
+                                self.metrics.inc("capsolver_solved")
+                            except Exception:
+                                pass
                             logger.info("CapSolver solved Turnstile on navigation page")
                             self.proxy_manager.record_captcha("glassdoor", solved=True)
                             self.captcha_consecutive = 0
@@ -1143,6 +1210,10 @@ class JobCollector:
                                 return True
                             captcha_detection = self._is_captcha_page(self.page) or captcha_detection
                         elif capsolver_attempted:
+                            try:
+                                self.metrics.inc("solver_failures")
+                            except Exception:
+                                pass
                             logger.info("CapSolver attempt failed (%s)", capsolver_reason)
                     except Exception as exc:
                         logger.debug("CapSolver solve wrapper failed (non-critical): %s", exc)
@@ -1151,6 +1222,10 @@ class JobCollector:
                         logger.info("Attempting to solve captcha on search/navigation page...")
                         solved, reason = self.captcha_solver.solve_if_present(self.page, detection=captcha_detection)
                         if solved:
+                            try:
+                                self.metrics.inc("captcha_solved")
+                            except Exception:
+                                pass
                             logger.info("Captcha solved autonomously on navigation page!")
                             self.proxy_manager.record_captcha("glassdoor", solved=True)
                             self.captcha_consecutive = 0
@@ -1159,12 +1234,20 @@ class JobCollector:
                                 return True
                             continue
                         logger.warning("Captcha solver failed: %s", reason)
+                        try:
+                            self.metrics.inc("solver_failures")
+                        except Exception:
+                            pass
                         rotation_needed = self.proxy_manager.record_captcha("glassdoor", solved=False)
                     else:
                         rotation_needed = self.proxy_manager.record_captcha("glassdoor", solved=False)
 
                     if rotation_needed and self.proxy_manager.is_enabled():
                         logger.info("Rotating proxy due to consecutive captchas...")
+                        try:
+                            self.metrics.inc("proxy_rotations")
+                        except Exception:
+                            pass
                         try:
                             self.proxy_manager.perform_rotation("glassdoor")
                         except Exception as exc:
@@ -2061,4 +2144,17 @@ class JobCollector:
         print("="*60 + "\n")
 
         logger.info(f"Collection complete: {len(unique_jobs)} unique jobs")
+
+        self.metrics.set_gauge("jobs_total_collected", self.total_jobs_collected)
+        self.metrics.set_gauge("jobs_unique_collected", len(unique_jobs))
+        self.metrics.set_gauge("jobs_with_salary", self.total_jobs_with_salary)
+        self.metrics.finish()
+        metrics_path = Path("output") / f"run_metrics_{self.metrics.run_id}.json"
+        try:
+            self.metrics.write_json(metrics_path)
+            logger.info("Run metrics summary: %s", json.dumps(self.metrics.to_dict(), sort_keys=True))
+            print(f"📈 Run metrics: {metrics_path}")
+        except Exception:
+            logger.exception("Failed to write run metrics")
+
         return unique_jobs

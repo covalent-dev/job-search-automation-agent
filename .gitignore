@@ -31,6 +31,7 @@ wheels/
 output/
 logs/
 *.log
+docs/reliability/artifacts/
 
 # Config overrides (keep templates)
 config/session.json
