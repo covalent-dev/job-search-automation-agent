@@ -18,6 +18,7 @@ from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from models import Job, SearchQuery
 from proxy_manager import ProxyManager
 from captcha_solver import CaptchaSolver
+from captcha import install_turnstile_render_hook, solve_turnstile_on_page_capsolver
 from flaresolverr import FlareSolverr, flaresolverr_cookies_to_playwright
 
 logger = logging.getLogger(__name__)
@@ -684,6 +685,8 @@ class JobCollector:
             title_markers = [
                 "just a moment...",
                 "attention required! | cloudflare",
+                "additional verification required",
+                "security check",
             ]
             for marker in title_markers:
                 if marker in title:
@@ -1123,7 +1126,28 @@ class JobCollector:
                         captcha_detection["title"],
                         captcha_detection["url"],
                     )
-                    if self.captcha_solver.available():
+                    capsolver_attempted = False
+                    try:
+                        ok, capsolver_reason, attempted = solve_turnstile_on_page_capsolver(
+                            self.page,
+                            proxy=self.proxy_manager.get_proxy("glassdoor"),
+                            timeout_seconds=int(self.config.get("captcha.timeout", 120) or 120),
+                        )
+                        capsolver_attempted = bool(attempted)
+                        if ok:
+                            logger.info("CapSolver solved Turnstile on navigation page")
+                            self.proxy_manager.record_captcha("glassdoor", solved=True)
+                            self.captcha_consecutive = 0
+                            time.sleep(3)
+                            if not self._is_captcha_page(self.page):
+                                return True
+                            captcha_detection = self._is_captcha_page(self.page) or captcha_detection
+                        elif capsolver_attempted:
+                            logger.info("CapSolver attempt failed (%s)", capsolver_reason)
+                    except Exception as exc:
+                        logger.debug("CapSolver solve wrapper failed (non-critical): %s", exc)
+
+                    if self.captcha_solver.available() and not capsolver_attempted:
                         logger.info("Attempting to solve captcha on search/navigation page...")
                         solved, reason = self.captcha_solver.solve_if_present(self.page, detection=captcha_detection)
                         if solved:
@@ -1515,6 +1539,12 @@ class JobCollector:
 
         self.page.set_default_timeout(self.config.get_page_timeout())
         self.page.set_default_navigation_timeout(self.config.get_navigation_timeout())
+
+        try:
+            install_turnstile_render_hook(context=self.context, page=self.page)
+            logger.info("Turnstile render-hook installed")
+        except Exception as exc:
+            logger.debug("Failed to install Turnstile render-hook (non-critical): %s", exc)
 
         self._apply_stealth_to_page(self.page)
 

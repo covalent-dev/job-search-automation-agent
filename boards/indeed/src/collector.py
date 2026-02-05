@@ -20,7 +20,7 @@ from models import Job, SearchQuery
 from run_metrics import RunMetrics
 from proxy_manager import ProxyManager
 from captcha_solver import CaptchaSolver
-from captcha import solve_turnstile_on_page_capsolver
+from captcha import install_turnstile_render_hook, solve_turnstile_on_page_capsolver
 from flaresolverr import FlareSolverr, flaresolverr_cookies_to_playwright
 
 logger = logging.getLogger(__name__)
@@ -168,8 +168,21 @@ class JobCollector:
 
             # First, wait for JS challenge to auto-complete
             if self._wait_for_challenge_completion(max_wait_seconds=12):
-                self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
-                return True
+                try:
+                    self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+                except Exception:
+                    pass
+
+                captcha_detection = self._is_captcha_page(self.page)
+                if not captcha_detection:
+                    self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
+                    return True
+
+                logger.info(
+                    "JS challenge finished but still blocked; continuing with solvers (reason=%s, title=%s)",
+                    captcha_detection.get("reason"),
+                    captcha_detection.get("title"),
+                )
 
             # If still blocked, try FlareSolverr (already attempted in _safe_goto) then CapSolver (Turnstile) then
             # fall back to the generic solver for other captcha types.
@@ -179,6 +192,7 @@ class JobCollector:
             try:
                 ok, capsolver_reason, attempted = solve_turnstile_on_page_capsolver(
                     self.page,
+                    proxy=self.proxy_mgr.get_proxy(session_key) if session_key else None,
                     timeout_seconds=int(self.config.get("captcha.timeout", 120) or 120),
                 )
                 capsolver_attempted = bool(attempted)
@@ -189,6 +203,10 @@ class JobCollector:
                     self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
                     self._save_cf_cookies()
                     self._persist_session_state()
+                    try:
+                        self.page.goto(url, wait_until="domcontentloaded")
+                    except Exception:
+                        pass
                 elif capsolver_attempted:
                     self.metrics.inc("solver_failures")
                     logger.info("%s CapSolver attempt failed (%s)", kind, capsolver_reason)
@@ -215,8 +233,20 @@ class JobCollector:
                 if not self._is_captcha_page(self.page):
                     return True
 
-            self.proxy_mgr.record_captcha(session_key=session_key, solved=False)
-            if self.proxy_mgr.enabled:
+                if capsolver_attempted:
+                    logger.info(
+                        "%s still blocked after CapSolver; retrying without proxy rotation",
+                        kind,
+                    )
+                    try:
+                        time.sleep(3)
+                        self.page.reload(wait_until="domcontentloaded")
+                    except Exception:
+                        pass
+                    continue
+
+            rotation_needed = self.proxy_mgr.record_captcha(session_key=session_key, solved=False)
+            if rotation_needed and self.proxy_mgr.enabled:
                 self.metrics.inc("proxy_rotations")
                 self.proxy_mgr.rotate(session_key=session_key)
                 self._restart_browser_with_proxy(session_key=session_key, reason=f"{kind}_blocked")
@@ -709,6 +739,8 @@ class JobCollector:
             title_markers = [
                 "just a moment...",
                 "attention required! | cloudflare",
+                "additional verification required",
+                "security check",
             ]
             for marker in title_markers:
                 if marker in title:
@@ -1381,6 +1413,12 @@ class JobCollector:
                 )
 
             self.page = self.context.new_page()
+
+        try:
+            install_turnstile_render_hook(context=self.context, page=self.page)
+            logger.info("Turnstile render-hook installed")
+        except Exception as exc:
+            logger.debug("Failed to install Turnstile render-hook (non-critical): %s", exc)
 
         # Restore any in-memory Cloudflare cookies (useful after proxy-triggered restarts)
         self._restore_cf_cookies()
