@@ -20,6 +20,7 @@ from models import Job, SearchQuery
 from run_metrics import RunMetrics
 from proxy_manager import ProxyManager
 from captcha_solver import CaptchaSolver
+from captcha import solve_turnstile_on_page_capsolver
 from flaresolverr import FlareSolverr, flaresolverr_cookies_to_playwright
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,8 @@ class JobCollector:
         self.captcha_backoff_base_seconds = 60
         self.captcha_backoff_max_seconds = 300
         self.current_query: Optional[str] = None
+        self.last_query_time = 0.0
+        self.cf_cookies: dict[str, dict] = {}
         self.jobs_checkpoint: List[Job] = []
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
@@ -112,6 +115,8 @@ class JobCollector:
 
     def _restart_browser_with_proxy(self, *, session_key: str, reason: str) -> None:
         logger.info("Restarting browser to apply proxy change (session=%s, reason=%s)", session_key, reason)
+        self._save_cf_cookies()
+        self._persist_session_state()
         self.stop_browser()
         self.start_browser(session_key=session_key)
 
@@ -166,14 +171,38 @@ class JobCollector:
                 self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
                 return True
 
-            # If still blocked, try captcha solver
+            # If still blocked, try FlareSolverr (already attempted in _safe_goto) then CapSolver (Turnstile) then
+            # fall back to the generic solver for other captcha types.
             solved = False
-            if self.solver.available():
+            capsolver_attempted = False
+
+            try:
+                ok, capsolver_reason, attempted = solve_turnstile_on_page_capsolver(
+                    self.page,
+                    timeout_seconds=int(self.config.get("captcha.timeout", 120) or 120),
+                )
+                capsolver_attempted = bool(attempted)
+                if ok:
+                    solved = True
+                    self.metrics.inc("captcha_solved")
+                    self.metrics.inc("capsolver_solved")
+                    self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
+                    self._save_cf_cookies()
+                    self._persist_session_state()
+                elif capsolver_attempted:
+                    self.metrics.inc("solver_failures")
+                    logger.info("%s CapSolver attempt failed (%s)", kind, capsolver_reason)
+            except Exception as exc:
+                logger.debug("CapSolver solve wrapper failed (non-critical): %s", exc)
+
+            if not solved and self.solver.available() and not capsolver_attempted:
                 ok, solve_reason = self.solver.solve_if_present(self.page, detection=captcha_detection)
                 if ok:
                     solved = True
                     self.metrics.inc("captcha_solved")
                     self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
+                    self._save_cf_cookies()
+                    self._persist_session_state()
                 else:
                     self.metrics.inc("solver_failures")
                     logger.info("%s solve attempt failed (%s)", kind, solve_reason)
@@ -211,13 +240,75 @@ class JobCollector:
         time.sleep(delay)
 
     def _delay_between_queries(self) -> None:
-        """Add longer delay between keyword queries to avoid rate limiting."""
+        """Backwards-compatible wrapper for query delay enforcement."""
+        self._enforce_query_delay()
+
+    def _enforce_query_delay(self) -> None:
+        """Enforce 30-60s (configurable) delay between query starts with jitter."""
         min_delay = float(self.config.get("cloudflare.min_delay_between_queries", 30.0) or 30.0)
         max_delay = float(self.config.get("cloudflare.max_delay_between_queries", 60.0) or 60.0)
-        delay = random.uniform(min_delay, max_delay)
-        logger.info("Waiting %.1fs between queries to avoid rate limiting...", delay)
-        print(f"   ⏳ Waiting {delay:.0f}s before next query...")
-        time.sleep(delay)
+        jitter_factor = float(self.config.get("cloudflare.jitter_factor", 0.3) or 0.3)
+
+        now = time.time()
+        if not self.last_query_time:
+            self.last_query_time = now
+            return
+
+        elapsed = max(0.0, now - float(self.last_query_time))
+        if elapsed >= min_delay:
+            self.last_query_time = now
+            return
+
+        base_wait = max(0.0, min_delay - elapsed)
+        extra = random.uniform(0.0, max(0.0, max_delay - min_delay)) if max_delay > min_delay else 0.0
+        jitter = base_wait * max(0.0, jitter_factor) * random.random()
+        total_wait = base_wait + extra + jitter
+
+        logger.info("Waiting %.1fs before next query (anti-detection)", total_wait)
+        print(f"   ⏳ Waiting {total_wait:.0f}s before next query...")
+        time.sleep(total_wait)
+        self.last_query_time = time.time()
+
+    def _save_cf_cookies(self) -> None:
+        """Save Cloudflare-related cookies from the current context for reuse after restarts."""
+        if not self.context:
+            return
+        try:
+            cookies = self.context.cookies()
+        except Exception:
+            return
+
+        saved = 0
+        for cookie in cookies or []:
+            name = str(cookie.get("name", "") or "")
+            lname = name.lower()
+            if "cf_" in lname or "clearance" in lname:
+                self.cf_cookies[name] = cookie
+                saved += 1
+
+        if saved:
+            logger.info("Saved %s Cloudflare cookies for reuse", len(self.cf_cookies))
+
+    def _restore_cf_cookies(self) -> None:
+        """Restore previously saved Cloudflare cookies into the current context."""
+        if not self.context or not self.cf_cookies:
+            return
+        try:
+            self.context.add_cookies(list(self.cf_cookies.values()))
+            logger.info("Restored %s Cloudflare cookies into context", len(self.cf_cookies))
+        except Exception as exc:
+            logger.debug("Failed to restore Cloudflare cookies (non-critical): %s", exc)
+
+    def _persist_session_state(self) -> None:
+        """Persist Playwright storage state so Cloudflare cookies survive future runs."""
+        if not self.context:
+            return
+        try:
+            self.session_file.parent.mkdir(parents=True, exist_ok=True)
+            self.context.storage_state(path=str(self.session_file))
+            logger.info("Saved session state to %s", self.session_file)
+        except Exception as exc:
+            logger.debug("Failed to persist session state (non-critical): %s", exc)
 
     def _apply_stealth_to_page(self, page: Page) -> None:
         """Apply stealth patches to a page"""
@@ -778,12 +869,39 @@ class JobCollector:
                         except Exception:
                             pass
                     solved = False
-                    if self.solver.available():
+                    capsolver_attempted = False
+                    try:
+                        ok, capsolver_reason, attempted = solve_turnstile_on_page_capsolver(
+                            detail_page,
+                            timeout_seconds=int(self.config.get("captcha.timeout", 120) or 120),
+                        )
+                        capsolver_attempted = bool(attempted)
+                        if ok:
+                            solved = True
+                            self.metrics.inc("captcha_solved")
+                            self.metrics.inc("capsolver_solved")
+                            self.proxy_mgr.record_captcha(
+                                session_key=f"indeed:{self.current_query or 'details'}", solved=True
+                            )
+                            self._save_cf_cookies()
+                            self._persist_session_state()
+                            self.captcha_consecutive = 0
+                        elif capsolver_attempted:
+                            self.metrics.inc("solver_failures")
+                            logger.info("Detail salary CapSolver attempt failed (%s)", capsolver_reason)
+                    except Exception as exc:
+                        logger.debug("Detail salary CapSolver wrapper failed (non-critical): %s", exc)
+
+                    if not solved and self.solver.available() and not capsolver_attempted:
                         ok, solve_reason = self.solver.solve_if_present(detail_page, detection=captcha_detection)
                         if ok:
                             solved = True
                             self.metrics.inc("captcha_solved")
-                            self.proxy_mgr.record_captcha(session_key=f"indeed:{self.current_query or 'details'}", solved=True)
+                            self.proxy_mgr.record_captcha(
+                                session_key=f"indeed:{self.current_query or 'details'}", solved=True
+                            )
+                            self._save_cf_cookies()
+                            self._persist_session_state()
                             self.captcha_consecutive = 0
                         else:
                             self.metrics.inc("solver_failures")
@@ -921,12 +1039,39 @@ class JobCollector:
                     )
                     self._captcha_backoff()
                     solved = False
-                    if self.solver.available():
+                    capsolver_attempted = False
+                    try:
+                        ok, capsolver_reason, attempted = solve_turnstile_on_page_capsolver(
+                            detail_page,
+                            timeout_seconds=int(self.config.get("captcha.timeout", 120) or 120),
+                        )
+                        capsolver_attempted = bool(attempted)
+                        if ok:
+                            solved = True
+                            self.metrics.inc("captcha_solved")
+                            self.metrics.inc("capsolver_solved")
+                            self.proxy_mgr.record_captcha(
+                                session_key=f"indeed:{self.current_query or 'details'}", solved=True
+                            )
+                            self._save_cf_cookies()
+                            self._persist_session_state()
+                            self.captcha_consecutive = 0
+                        elif capsolver_attempted:
+                            self.metrics.inc("solver_failures")
+                            logger.info("Detail description CapSolver attempt failed (%s)", capsolver_reason)
+                    except Exception as exc:
+                        logger.debug("Detail description CapSolver wrapper failed (non-critical): %s", exc)
+
+                    if not solved and self.solver.available() and not capsolver_attempted:
                         ok, solve_reason = self.solver.solve_if_present(detail_page, detection=captcha_detection)
                         if ok:
                             solved = True
                             self.metrics.inc("captcha_solved")
-                            self.proxy_mgr.record_captcha(session_key=f"indeed:{self.current_query or 'details'}", solved=True)
+                            self.proxy_mgr.record_captcha(
+                                session_key=f"indeed:{self.current_query or 'details'}", solved=True
+                            )
+                            self._save_cf_cookies()
+                            self._persist_session_state()
                             self.captcha_consecutive = 0
                         else:
                             self.metrics.inc("solver_failures")
@@ -1237,6 +1382,9 @@ class JobCollector:
 
             self.page = self.context.new_page()
 
+        # Restore any in-memory Cloudflare cookies (useful after proxy-triggered restarts)
+        self._restore_cf_cookies()
+
         self.page.set_default_timeout(self.config.get_page_timeout())
         self.page.set_default_navigation_timeout(self.config.get_navigation_timeout())
 
@@ -1304,6 +1452,8 @@ class JobCollector:
 
     def stop_browser(self) -> None:
         """Clean up browser resources"""
+        self._save_cf_cookies()
+        self._persist_session_state()
         try:
             if self.detail_salary_page:
                 self.detail_salary_page.close()
@@ -1616,13 +1766,12 @@ class JobCollector:
                 logger.warning("Indeed warmup failed - bot detection likely active")
                 print("⚠️  Indeed warmup failed - bot detection may be active")
 
-            for i, query in enumerate(queries):
+            for query in queries:
                 try:
+                    # Enforce longer delays between query starts (30-60s recommended).
+                    self._enforce_query_delay()
                     jobs = self.collect_jobs(query)
                     all_jobs.extend(jobs)
-                    # Use longer delay between queries (not after the last one)
-                    if i < len(queries) - 1:
-                        self._delay_between_queries()
                 except CaptchaAbort:
                     logger.warning("Aborting run after captcha per user request")
                     print("\n⚠️  Run aborted by user after captcha.")
