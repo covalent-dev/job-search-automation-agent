@@ -1,0 +1,75 @@
+search:
+  keywords:
+    - "software engineer"
+  location: "Remote"
+  max_results_per_search: 3
+  max_pages: 1
+  detail_salary_fetch: false
+  detail_description_fetch: false
+  job_boards:
+    - glassdoor
+
+output:
+  json_file: output/jobs_{timestamp}.json
+  markdown_file: output/jobs_{timestamp}.md
+  summary_file: output/run_summary_{timestamp}.json
+  config_snapshot_file: output/config_snapshot_{timestamp}.yaml
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: true
+  min_delay: 1.0
+  max_delay: 2.0
+  page_timeout: 20
+  navigation_timeout: 25
+  launch_timeout: 45
+  max_retries: 2
+  use_stealth: true
+  use_undetected: true
+
+ai_filter:
+  enabled: false
+
+dedupe:
+  enabled: false
+
+logging:
+  level: INFO
+  log_file: logs/job_bot_{timestamp}.log
+
+proxy:
+  enabled: true
+  provider: http
+  server: "http://${PROXY_HOST}:${PROXY_PORT}"
+  username: "${PROXY_USERNAME}"
+  password: "${PROXY_PASSWORD}"
+  sticky: true
+  session_ttl: 1800
+  pool_size: 1
+  rotate_on_captcha_consecutive: 2
+
+captcha:
+  enabled: true
+  provider: capsolver
+  api_key: "${CAPSOLVER_API_KEY}"
+  timeout: 120
+  max_retries: 2
+  backoff_base_seconds: 60
+  backoff_max_seconds: 300
+
+flaresolverr:
+  enabled: true
+  url: "http://localhost:8191"
+  timeout: 60
+  use_proxy: true
+
+cloudflare:
+  enabled: true
+  session_persistence: true
+  turnstile_solving: true
+  min_delay_between_queries: 5.0
+  max_delay_between_queries: 10.0
+  warmup_delay: 2.0
+  jitter_factor: 0.3

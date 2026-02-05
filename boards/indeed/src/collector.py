@@ -140,6 +140,94 @@ class JobCollector:
                 return True
         return False
 
+    def _try_click_turnstile(self) -> bool:
+        """Attempt to click a Cloudflare Turnstile checkbox if present."""
+        try:
+            if not self.page:
+                return False
+
+            selectors = [
+                "iframe[src*='challenges.cloudflare.com']",
+                "iframe[src*='turnstile']",
+                ".cf-turnstile iframe",
+                "iframe[title*='challenge']",
+            ]
+            logger.info("Looking for Turnstile iframe...")
+
+            iframe = None
+            for wait in range(15):
+                for selector in selectors:
+                    iframe = self.page.query_selector(selector)
+                    if iframe:
+                        logger.info("Found Turnstile iframe after %ds: %s", wait, selector)
+                        break
+                if iframe:
+                    break
+                # Cloudflare sometimes renders Turnstile inside shadow DOM; prefer frame-based detection.
+                try:
+                    for frame in self.page.frames:
+                        furl = (frame.url or "").lower()
+                        if "challenges.cloudflare.com" in furl or "turnstile" in furl:
+                            checkbox = frame.query_selector("input[type='checkbox'], [role='checkbox']")
+                            if checkbox:
+                                logger.info("Found Turnstile frame after %ds; clicking checkbox in frame", wait)
+                                checkbox.click()
+                                time.sleep(2)
+                                return not bool(self._is_captcha_page(self.page))
+                except Exception:
+                    pass
+                time.sleep(1)
+
+            if iframe:
+                try:
+                    time.sleep(1)
+                    box = iframe.bounding_box()
+                    if box and box.get("width", 0) > 0 and box.get("height", 0) > 0:
+                        click_x = box["x"] + 30
+                        click_y = box["y"] + box["height"] / 2
+                        logger.info("Clicking Turnstile at (%.0f, %.0f)", click_x, click_y)
+                        self.page.mouse.click(click_x, click_y)
+                        time.sleep(3)
+
+                        try:
+                            frame = iframe.content_frame()
+                            if frame:
+                                checkbox = frame.query_selector("input[type='checkbox'], [role='checkbox']")
+                                if checkbox:
+                                    logger.info("Clicking checkbox inside Turnstile iframe")
+                                    checkbox.click()
+                                    time.sleep(2)
+                        except Exception:
+                            pass
+
+                        time.sleep(2)
+                        if not self._is_captcha_page(self.page):
+                            logger.info("Turnstile click appears to have resolved the challenge")
+                            return True
+                    return False
+                except Exception:
+                    return False
+
+            checkbox_selectors = [
+                "input[type='checkbox']",
+                "[role='checkbox']",
+            ]
+            for selector in checkbox_selectors:
+                checkbox = self.page.query_selector(selector)
+                if checkbox:
+                    try:
+                        if checkbox.is_visible():
+                            logger.info("Clicking checkbox: %s", selector)
+                            checkbox.click()
+                            time.sleep(2)
+                            return not bool(self._is_captcha_page(self.page))
+                    except Exception:
+                        pass
+
+            return False
+        except Exception:
+            return False
+
     def _goto_with_antibot(self, url: str, *, session_key: str, kind: str) -> bool:
         """Navigate to a URL and handle Cloudflare/captcha challenges (best-effort)."""
         if not self.page:
@@ -188,6 +276,18 @@ class JobCollector:
             # fall back to the generic solver for other captcha types.
             solved = False
             capsolver_attempted = False
+
+            # Some Cloudflare interstitials (e.g., "Additional Verification Required") can be
+            # resolved by clicking the Turnstile checkbox directly.
+            try:
+                if self._try_click_turnstile():
+                    solved = True
+                    self.metrics.inc("captcha_solved")
+                    self.proxy_mgr.record_captcha(session_key=session_key, solved=True)
+                    self._save_cf_cookies()
+                    self._persist_session_state()
+            except Exception:
+                pass
 
             try:
                 ok, capsolver_reason, attempted = solve_turnstile_on_page_capsolver(
@@ -252,11 +352,13 @@ class JobCollector:
                 self._restart_browser_with_proxy(session_key=session_key, reason=f"{kind}_blocked")
                 continue
 
-            logger.error(
-                "%s blocked and proxy rotation disabled; failing fast. See artifacts under output/%s_*",
-                kind,
-                f"{kind}_captcha",
-            )
+            if attempt < max_attempts:
+                delay_seconds = random.uniform(4.0, 8.0) * attempt
+                logger.info("%s still blocked; backing off %.1fs before retrying...", kind, delay_seconds)
+                time.sleep(delay_seconds)
+                continue
+
+            logger.error("%s blocked after %s attempts; failing fast. See artifacts under output/%s_*", kind, max_attempts, f"{kind}_captcha")
             return False
 
         logger.error("%s blocked after %s attempts; failing fast", kind, max_attempts)
@@ -332,6 +434,8 @@ class JobCollector:
     def _persist_session_state(self) -> None:
         """Persist Playwright storage state so Cloudflare cookies survive future runs."""
         if not self.context:
+            return
+        if not bool(self.config.get("cloudflare.session_persistence", True)):
             return
         try:
             self.session_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1205,10 +1309,14 @@ class JobCollector:
             "cloudflare" in reason
             or reason.startswith("title:just a moment")
             or reason.startswith("title:attention required")
+            or reason.startswith("title:security check")
+            or reason.startswith("title:additional verification")
             or reason.startswith("url:__cf_chl")
             or reason.startswith("url:/cdn-cgi/")
             or "just a moment" in title
             or "cloudflare" in title
+            or "security check" in title
+            or "additional verification" in title
         )
 
     def _playwright_proxy_to_url(self, proxy: Optional[dict]) -> Optional[str]:
@@ -1394,8 +1502,9 @@ class JobCollector:
                 proxy=proxy,
             )
 
-            if self.session_file.exists():
-                logger.info(f"Loading session from {self.session_file}")
+            session_persistence = bool(self.config.get("cloudflare.session_persistence", True))
+            if session_persistence and self.session_file.exists():
+                logger.info("Loading session from %s", self.session_file)
                 self.context = self.browser.new_context(
                     storage_state=str(self.session_file),
                     viewport={"width": 1920, "height": 1080},
@@ -1404,7 +1513,10 @@ class JobCollector:
                     timezone_id="America/New_York",
                 )
             else:
-                logger.warning("No session found - run setup_session.py first!")
+                if not session_persistence:
+                    logger.info("Session persistence disabled; starting fresh context")
+                else:
+                    logger.warning("No session found - run setup_session.py first!")
                 self.context = self.browser.new_context(
                     viewport={"width": 1920, "height": 1080},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",

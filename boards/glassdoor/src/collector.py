@@ -1310,10 +1310,14 @@ class JobCollector:
             "cloudflare" in reason
             or reason.startswith("title:just a moment")
             or reason.startswith("title:attention required")
+            or reason.startswith("title:security check")
+            or reason.startswith("title:additional verification")
             or reason.startswith("url:__cf_chl")
             or reason.startswith("url:/cdn-cgi/")
             or "just a moment" in title
             or "cloudflare" in title
+            or "security check" in title
+            or "additional verification" in title
         )
 
     def _playwright_proxy_to_url(self, proxy: Optional[dict]) -> Optional[str]:

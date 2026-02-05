@@ -54,3 +54,4 @@ Thumbs.db
 browser-profile/
 *-profile/
 .env
+.env.bak*

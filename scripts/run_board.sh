@@ -33,6 +33,17 @@ if [ -f "$REPO_ROOT/.env" ]; then
     set +a
 fi
 
+# Resolve config path:
+# - By default configs are relative to the board dir (`config/settings.yaml`).
+# - Allow callers to pass repo-root-relative paths like `boards/<board>/config/...`.
+if [ -n "$CONFIG" ] && [ "${CONFIG#/}" = "$CONFIG" ]; then
+    if [ -f "$REPO_ROOT/$BOARD_DIR/$CONFIG" ]; then
+        : # board-dir-relative; keep as-is
+    elif [ -f "$REPO_ROOT/$CONFIG" ]; then
+        CONFIG="$REPO_ROOT/$CONFIG"
+    fi
+fi
+
 # Set working directory to board dir (for relative config paths)
 cd "$REPO_ROOT/$BOARD_DIR"
 
