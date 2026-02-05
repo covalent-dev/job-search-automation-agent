@@ -34,6 +34,11 @@ def _looks_like_session_tagged(username: str) -> bool:
     return "-session-" in lower or "_session_" in lower or "-sessid-" in lower or "_sessid_" in lower
 
 
+def _looks_like_iproyal_password_tagged(password: str) -> bool:
+    lower = (password or "").lower()
+    return "_session-" in lower or "_lifetime-" in lower
+
+
 @dataclass
 class _SessionState:
     session_id: str
@@ -178,7 +183,7 @@ class ProxyManager:
         state = self._sessions.get(bucket)
 
         if state is None or state.is_expired():
-            session_id = uuid.uuid4().hex[:12]
+            session_id = uuid.uuid4().hex[:8]
             ttl = int(self.settings.session_ttl_seconds or 0)
             expires_at = (_now() + ttl) if ttl > 0 else None
             state = _SessionState(session_id=session_id, expires_at=expires_at, rotations=0)
@@ -206,7 +211,7 @@ class ProxyManager:
         scope = (self.settings.session_scope or "run").strip().lower()
         effective_key = "run" if scope == "run" else (affinity_key or "query")
         bucket = _stable_bucket(effective_key, int(self.settings.pool_size or 1))
-        session_id = uuid.uuid4().hex[:12]
+        session_id = uuid.uuid4().hex[:8]
         ttl = int(self.settings.session_ttl_seconds or 0)
         expires_at = (_now() + ttl) if ttl > 0 else None
         prev = self._sessions.get(bucket)
@@ -224,7 +229,6 @@ class ProxyManager:
         base = (self.settings.username or "").strip()
         template = (self.settings.username_template or "").strip() or None
         session_id = self._get_or_create_session(affinity_key)
-        provider = (self.settings.provider or "generic").strip().lower()
 
         # Allow users to put `{session}` in username itself.
         if "{session}" in base and not template:
@@ -233,9 +237,6 @@ class ProxyManager:
 
         if template and session_id:
             return template.replace("{session}", session_id)
-
-        if provider == "iproyal" and session_id and base and not _looks_like_session_tagged(base):
-            return f"{base}-session-{session_id}"
 
         return base
 
@@ -253,6 +254,15 @@ class ProxyManager:
 
         username = self._build_username(affinity_key)
         password = (self.settings.password or "").strip()
+        session_id = self._get_or_create_session(affinity_key)
+
+        server = (self.settings.server or "").strip().lower()
+        is_iproyal = "iproyal" in server
+
+        if is_iproyal and session_id and password and not _looks_like_iproyal_password_tagged(password):
+            ttl = int(self.settings.session_ttl_seconds or 0)
+            lifetime_minutes = max(1, min(59, int(round(ttl / 60.0)) if ttl else 30))
+            password = f"{password}_session-{session_id}_lifetime-{lifetime_minutes}m"
 
         if username:
             proxy["username"] = username
@@ -333,4 +343,3 @@ class ProxyManager:
             "needs_rotation": self._needs_rotation,
             "total_rotations": self._total_rotations,
         }
-
