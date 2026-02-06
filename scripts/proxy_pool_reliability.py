@@ -502,7 +502,18 @@ def main() -> int:
 
     raw = os.environ.get("ISP_PROXY_ENDPOINTS", "").strip()
     if not raw:
-        raise SystemExit("ISP_PROXY_ENDPOINTS is not set (expected comma-separated host:port:username:password)")
+        host = (os.environ.get("PROXY_HOST") or "").strip()
+        port = (os.environ.get("PROXY_PORT") or "").strip()
+        username = os.environ.get("PROXY_USERNAME") or ""
+        password = os.environ.get("PROXY_PASSWORD") or ""
+        if host and port and username and password:
+            raw = f"{host}:{port}:{username}:{password}"
+            print("WARN: ISP_PROXY_ENDPOINTS is unset; falling back to PROXY_* env vars as a single-endpoint pool.")
+        else:
+            raise SystemExit(
+                "ISP_PROXY_ENDPOINTS is not set (expected comma-separated host:port:username:password). "
+                "Alternatively set PROXY_HOST/PROXY_PORT/PROXY_USERNAME/PROXY_PASSWORD for a single-endpoint fallback."
+            )
 
     endpoints = _parse_endpoints(raw)
     only: Optional[set[int]] = _parse_indexes(args.only_indexes) if args.only_indexes.strip() else None
@@ -612,4 +623,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
