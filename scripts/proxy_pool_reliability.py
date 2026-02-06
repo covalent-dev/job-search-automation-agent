@@ -110,17 +110,75 @@ class AttemptResult:
 def _parse_endpoints(raw: str) -> list[ProxyEndpoint]:
     endpoints: list[ProxyEndpoint] = []
     for i, item in enumerate([p.strip() for p in raw.split(",") if p.strip()], start=1):
+        # Supported formats:
+        # - host:port:username:password
+        # - host:port (falls back to PROXY_USERNAME/PROXY_PASSWORD)
+        #
         # Allow IPv6 by splitting from the right.
         parts = item.rsplit(":", 3)
-        if len(parts) != 4:
+        if len(parts) == 2:
+            host, port = parts
+            username = os.environ.get("PROXY_USERNAME") or ""
+            password = os.environ.get("PROXY_PASSWORD") or ""
+            if not username or not password:
+                raise ValueError(
+                    f"ISP_PROXY_ENDPOINTS entry #{i} is missing credentials and PROXY_USERNAME/PROXY_PASSWORD are not set"
+                )
+        elif len(parts) == 4:
+            host, port, username, password = parts
+        else:
             raise ValueError(
-                f"ISP_PROXY_ENDPOINTS entry #{i} is malformed (expected host:port:username:password)"
+                f"ISP_PROXY_ENDPOINTS entry #{i} is malformed (expected host:port or host:port:username:password)"
             )
-        host, port, username, password = parts
         if not host or not port:
             raise ValueError(f"ISP_PROXY_ENDPOINTS entry #{i} is missing host/port")
         endpoints.append(ProxyEndpoint(host=host, port=port, username=username, password=password))
     return endpoints
+
+
+def _load_summary_json(path: Path) -> list[tuple[int, str, list[AttemptResult]]]:
+    data = _read_json(path)
+    proxies = data.get("proxies") or []
+    out: list[tuple[int, str, list[AttemptResult]]] = []
+    for p in proxies:
+        idx = int(p.get("index") or 0)
+        masked = str(p.get("masked_endpoint") or "")
+        attempts: list[AttemptResult] = []
+        for a in (p.get("attempts") or []):
+            attempts.append(
+                AttemptResult(
+                    run_index=int(a.get("run_index") or 0),
+                    phase=str(a.get("phase") or ""),
+                    started_at_utc=str(a.get("started_at_utc") or ""),
+                    duration_seconds=float(a.get("duration_seconds") or 0.0),
+                    exit_code=int(a.get("exit_code") or 0),
+                    stdout_path=str(a.get("stdout_path") or ""),
+                    run_metrics_path=(str(a.get("run_metrics_path")) if a.get("run_metrics_path") else None),
+                    pass_=bool(a.get("pass_") or False),
+                    jobs_unique_collected=int(a.get("jobs_unique_collected") or 0),
+                    counters=dict(a.get("counters") or {}),
+                )
+            )
+        out.append((idx, masked, attempts))
+    return out
+
+
+def _merge_summaries(summary_paths: list[Path]) -> list[tuple[int, str, list[AttemptResult]]]:
+    merged: dict[int, tuple[str, list[AttemptResult]]] = {}
+    for path in summary_paths:
+        for idx, masked, attempts in _load_summary_json(path):
+            if idx <= 0:
+                continue
+            if idx not in merged:
+                merged[idx] = (masked, list(attempts))
+                continue
+            cur_masked, cur_attempts = merged[idx]
+            merged[idx] = (masked or cur_masked, cur_attempts + list(attempts))
+    out: list[tuple[int, str, list[AttemptResult]]] = []
+    for idx in sorted(merged.keys()):
+        masked, attempts = merged[idx]
+        out.append((idx, masked, attempts))
+    return out
 
 
 def _find_new_metrics(board_dir: Path, before: set[Path], started_monotonic: float) -> Optional[Path]:
@@ -496,7 +554,73 @@ def main() -> int:
         action="store_true",
         help="Do not execute Glassdoor; just parse endpoints and write an empty report/artifacts.",
     )
+    ap.add_argument(
+        "--merge-summary-jsons",
+        default="",
+        help="Comma-separated paths to existing summary.json files to merge into a single report (no live runs).",
+    )
     args = ap.parse_args()
+
+    if args.merge_summary_jsons.strip():
+        summary_paths = [Path(p.strip()) for p in args.merge_summary_jsons.split(",") if p.strip()]
+        if not summary_paths:
+            raise SystemExit("--merge-summary-jsons provided but no paths parsed")
+        for p in summary_paths:
+            if not p.exists():
+                raise SystemExit(f"summary.json not found: {p}")
+
+        artifact_dir = Path(args.artifact_dir)
+        report_path = Path(args.report_path)
+        config_path = str(args.config_path)
+
+        merged_attempts = _merge_summaries(summary_paths)
+        results: list[tuple[int, ProxyEndpoint, list[AttemptResult]]] = []
+        for idx, masked, attempts in merged_attempts:
+            # Placeholder endpoint for rendering; only masked_label is used in the report.
+            if ":" in masked:
+                host, port = masked.split(":", 1)
+            else:
+                host, port = masked, ""
+            ep = ProxyEndpoint(host=host, port=port, username="", password="")
+            results.append((idx, ep, attempts))
+
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        merged_summary_path = artifact_dir / "summary.merged.json"
+        merged_summary = {
+            "generated_at_utc": _utc_now().isoformat(),
+            "board": "glassdoor",
+            "config_path": config_path,
+            "merged_from": [str(p) for p in summary_paths],
+            "proxies": [
+                {
+                    "index": idx,
+                    "masked_endpoint": ep.masked_label,
+                    "attempts": [asdict(a) for a in attempts],
+                }
+                for (idx, ep, attempts) in results
+            ],
+        }
+        merged_summary_path.write_text(
+            json.dumps(merged_summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        report_md = _render_report(
+            config_path=config_path,
+            artifact_dir=artifact_dir,
+            filter_runs=int(args.filter_runs),
+            measured_runs=int(args.measured_runs),
+            sleep_seconds=float(args.sleep_seconds),
+            keep_threshold=float(args.keep_threshold),
+            keep_min_runs=int(args.keep_min_runs),
+            results=results,
+        )
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(report_md, encoding="utf-8")
+        (artifact_dir / "report.md").write_text(report_md, encoding="utf-8")
+
+        print(f"Wrote merged report: {report_path}")
+        print(f"Wrote merge artifacts: {artifact_dir}")
+        return 0
 
     _coordination_gate(skip=bool(args.skip_coordination_gate or args.dry_run))
 
