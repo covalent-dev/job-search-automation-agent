@@ -27,10 +27,25 @@ export JOB_BOT_BOARD="$BOARD"
 
 # Load repo-level .env if present (gitignored secrets; optional)
 if [ -f "$REPO_ROOT/.env" ]; then
+    # Preserve per-run env overrides (the harness sets PROXY_* per run).
+    # `.env` should only fill missing values and must not overwrite explicit overrides.
+    declare -A __PRESERVE_ENV=()
+    for __k in PROXY_HOST PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
+        if [[ -v $__k ]]; then
+            __PRESERVE_ENV["$__k"]="${!__k}"
+        fi
+    done
+
     set -a
     # shellcheck disable=SC1090
     source "$REPO_ROOT/.env"
     set +a
+
+    for __k in PROXY_HOST PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
+        if [[ -n "${__PRESERVE_ENV[$__k]+x}" ]]; then
+            export "$__k=${__PRESERVE_ENV[$__k]}"
+        fi
+    done
 fi
 
 # Resolve config path:
