@@ -195,6 +195,15 @@ class JobCollector:
         self.checkpoint_path = Path("output/progress_checkpoint.json")
         self.captcha_log_path = Path("output/captcha_log.json")
         self.metrics = RunMetrics(board="glassdoor")
+        self._timings_ms: dict[str, int] = {}
+        self._failure_stage: Optional[str] = None
+        self._failure_kind: Optional[str] = None
+        self._exception_class: Optional[str] = None
+        self._exception_message: Optional[str] = None
+        self._last_url: Optional[str] = None
+        self._nav_failure_kind: Optional[str] = None
+        self._nav_exception_class: Optional[str] = None
+        self._nav_exception_message: Optional[str] = None
         self.proxy_manager = ProxyManager(config)
         self.captcha_solver = CaptchaSolver(config)
         self.flaresolverr = None
@@ -218,6 +227,39 @@ class JobCollector:
             self.metrics.set_gauge("captcha_provider", str(self.config.get("captcha.provider", "")))
         except Exception:
             pass
+
+    def _timing_add_ms(self, key: str, duration_seconds: float) -> None:
+        if not key:
+            return
+        try:
+            ms = int(max(float(duration_seconds) * 1000.0, 0.0))
+            self._timings_ms[key] = int(self._timings_ms.get(key, 0) or 0) + ms
+        except Exception:
+            return
+
+    def _set_failure(
+        self,
+        *,
+        stage: str,
+        kind: str,
+        exc: Optional[BaseException] = None,
+        url: Optional[str] = None,
+    ) -> None:
+        if stage and self._failure_stage is None:
+            self._failure_stage = stage
+        if kind and self._failure_kind is None:
+            self._failure_kind = kind
+        if url and self._last_url is None:
+            self._last_url = url
+        if exc and self._exception_class is None:
+            try:
+                self._exception_class = exc.__class__.__name__
+            except Exception:
+                self._exception_class = "Exception"
+            try:
+                self._exception_message = (str(exc) or "")[:300]
+            except Exception:
+                self._exception_message = ""
 
     def _random_delay(self) -> None:
         """Add human-like delay between actions"""
@@ -1127,6 +1169,8 @@ class JobCollector:
     def _safe_goto(self, url: str) -> bool:
         """Navigate with retry for flaky pages, with human-like behavior."""
         attempt = 0
+        saw_challenge = False
+        last_exc: Optional[BaseException] = None
         while attempt < self.max_retries:
             attempt += 1
             try:
@@ -1142,6 +1186,7 @@ class JobCollector:
 
                 captcha_detection = self._is_captcha_page(self.page)
                 if captcha_detection:
+                    saw_challenge = True
                     # Wait for JS challenge to resolve - "Just a moment..." may auto-pass
                     if "just a moment" in (captcha_detection.get("title") or "").lower():
                         logger.info("Detected JS challenge, waiting for resolution...")
@@ -1272,10 +1317,31 @@ class JobCollector:
                     continue
 
                 self.captcha_consecutive = 0
+                try:
+                    self._nav_failure_kind = None
+                    self._nav_exception_class = None
+                    self._nav_exception_message = None
+                except Exception:
+                    pass
                 return True
             except Exception as exc:
+                last_exc = exc
                 logger.warning("Navigation failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
                 self._random_delay()
+                try:
+                    self._nav_exception_class = exc.__class__.__name__
+                    self._nav_exception_message = (str(exc) or "")[:300]
+                except Exception:
+                    pass
+        try:
+            if saw_challenge:
+                self._nav_failure_kind = "challenge"
+            elif last_exc and "timeout" in (str(last_exc) or "").lower():
+                self._nav_failure_kind = "timeout"
+            else:
+                self._nav_failure_kind = "timeout" if last_exc else "unknown"
+        except Exception:
+            pass
         return False
 
     def _try_click_turnstile(self) -> bool:
@@ -1638,8 +1704,10 @@ class JobCollector:
         if use_stealth:
             logger.info("Performing homepage warmup for Glassdoor...")
             try:
+                warmup_started = time.monotonic()
                 self.page.goto("https://www.glassdoor.com", wait_until="domcontentloaded")
                 self._human_like_warmup(self.page)
+                self._timing_add_ms("t_home_warmup_ms", time.monotonic() - warmup_started)
                 logger.info("Homepage warmup complete")
             except Exception as exc:
                 logger.warning("Homepage warmup failed (continuing anyway): %s", exc)
@@ -1742,19 +1810,49 @@ class JobCollector:
 
             try:
                 # Navigate to search results
-                if not self._safe_goto(url):
+                nav_started = time.monotonic()
+                ok = self._safe_goto(url)
+                self._timing_add_ms("t_search_ms", time.monotonic() - nav_started)
+                try:
+                    if self.page:
+                        self._last_url = self.page.url
+                except Exception:
+                    pass
+
+                if not ok:
                     logger.warning("Failed to load search page after retries")
                     print("   ✗ Failed to load search page")
+                    self._set_failure(
+                        stage="search",
+                        kind=str(self._nav_failure_kind or "timeout"),
+                        url=url,
+                    )
+                    if self._nav_exception_class or self._nav_exception_message:
+                        try:
+                            self._exception_class = self._exception_class or self._nav_exception_class
+                            self._exception_message = self._exception_message or self._nav_exception_message
+                        except Exception:
+                            pass
                     break
                 self._random_delay()
 
+                cards_started = time.monotonic()
                 job_cards = self._get_job_cards(self.current_board)
+                self._timing_add_ms("t_results_parse_ms", time.monotonic() - cards_started)
 
                 if not job_cards:
                     # Debug: save screenshot and HTML
                     self.page.screenshot(path="output/debug_screenshot.png")
                     logger.warning("No job cards found with any selector")
                     print("   ⚠️  No job cards found - saved debug screenshot")
+                    try:
+                        self._set_failure(
+                            stage="results",
+                            kind="selector",
+                            url=self.page.url if self.page else url,
+                        )
+                    except Exception:
+                        self._set_failure(stage="results", kind="selector", url=url)
                     break
 
                 if self.current_board != "glassdoor":
@@ -1770,6 +1868,7 @@ class JobCollector:
 
                 added_this_page = 0
                 first_link = None
+                extract_started = time.monotonic()
                 for i, card in enumerate(job_cards):
                     if len(jobs) >= query.max_results:
                         break
@@ -1797,7 +1896,9 @@ class JobCollector:
                                     fetch_label,
                                     job.link,
                                 )
+                                detail_started = time.monotonic()
                                 detail_salary, detail_job_type = self._fetch_detail_salary(str(job.link))
+                                self._timing_add_ms("t_detail_salary_ms", time.monotonic() - detail_started)
                                 print("")
                                 if detail_salary:
                                     job.salary = detail_salary
@@ -1821,7 +1922,9 @@ class JobCollector:
                                     fetch_label,
                                     job.link,
                                 )
+                                detail_started = time.monotonic()
                                 detail_description = self._fetch_detail_description(str(job.link))
+                                self._timing_add_ms("t_detail_description_ms", time.monotonic() - detail_started)
                                 print("")
                                 if detail_description:
                                     job.description_full = detail_description
@@ -1846,6 +1949,7 @@ class JobCollector:
                     # Small delay between extractions
                     if i % 5 == 0:
                         self._random_delay()
+                self._timing_add_ms("t_collect_ms", time.monotonic() - extract_started)
 
                 if progress_total > 0:
                     print("")
@@ -1870,6 +1974,7 @@ class JobCollector:
             except Exception as e:
                 logger.error("Error collecting jobs: %s", e)
                 print(f"   ✗ Error: {e}")
+                self._set_failure(stage="collect", kind="unexpected", exc=e, url=url)
                 break
 
             if not self._has_next_page():
@@ -2151,7 +2256,36 @@ class JobCollector:
         self.metrics.finish()
         metrics_path = Path("output") / f"run_metrics_{self.metrics.run_id}.json"
         try:
-            self.metrics.write_json(metrics_path)
+            result = "success" if len(unique_jobs) >= 1 else "fail"
+            failure_stage = self._failure_stage
+            failure_kind = self._failure_kind
+            exception_class = self._exception_class
+            exception_message = self._exception_message
+            last_url = self._last_url
+            try:
+                if self.page and not last_url:
+                    last_url = self.page.url
+            except Exception:
+                pass
+
+            timings_ms = dict(self._timings_ms)
+            try:
+                timings_ms["t_detail_open_ms"] = int(timings_ms.get("t_detail_salary_ms", 0) or 0) + int(
+                    timings_ms.get("t_detail_description_ms", 0) or 0
+                )
+            except Exception:
+                pass
+
+            extra = {
+                "result": result,
+                "failure_stage": failure_stage,
+                "failure_kind": failure_kind,
+                "last_url": last_url,
+                "exception_class": exception_class,
+                "exception_message": exception_message,
+                "timings_ms": timings_ms,
+            }
+            self.metrics.write_json(metrics_path, extra=extra)
             logger.info("Run metrics summary: %s", json.dumps(self.metrics.to_dict(), sort_keys=True))
             print(f"📈 Run metrics: {metrics_path}")
         except Exception:
