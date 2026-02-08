@@ -1,0 +1,53 @@
+# RemoteAfrica battery smoke run (no-proxy baseline)
+search:
+  keywords:
+    - "AI engineer"
+  location: "Remote"
+  max_results_per_search: 25
+  max_pages: 1
+  detail_salary_fetch: false
+  detail_description_fetch: false
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.0
+  detail_description_delay_max: 2.0
+  job_boards:
+    - "remoteafrica"
+
+output:
+  json_file: "output/test-runs/jobs_battery_smoke_noproxy_{timestamp}.json"
+  markdown_file: "output/test-runs/jobs_battery_smoke_noproxy_{timestamp}.md"
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: true
+  min_delay: 0.4
+  max_delay: 1.2
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  use_stealth: false
+
+ai_filter:
+  enabled: false
+
+proxy:
+  enabled: false
+
+captcha:
+  enabled: false
+
+flaresolverr:
+  enabled: false
+
+dedupe:
+  enabled: false
+  hash_file: "output/test-runs/dedupe_hashes.jsonl"
+
+logging:
+  level: "INFO"
+  log_file: "logs/test-runs/battery_smoke_noproxy_{timestamp}.log"
