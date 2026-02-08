@@ -1,0 +1,55 @@
+# LinkedIn battery standard run (no-proxy baseline)
+search:
+  keywords:
+    - "AI engineer"
+  location: "Remote"
+  max_results_per_search: 10
+  max_pages: 2
+  detail_salary_fetch: false
+  detail_description_fetch: false
+  job_boards:
+    - "linkedin"
+
+output:
+  json_file: "output/test-runs/jobs_battery_standard_noproxy_{timestamp}.json"
+  markdown_file: "output/test-runs/jobs_battery_standard_noproxy_{timestamp}.md"
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: true
+  min_delay: 1.0
+  max_delay: 2.0
+  page_timeout: 45
+  navigation_timeout: 45
+  launch_timeout: 90
+  max_retries: 1
+  channel: ""
+  executable_path: ""
+  use_stealth: false
+
+metrics:
+  enabled: true
+  output_file: "output/test-runs/run_metrics_{timestamp}.json"
+  include_events: true
+
+ai_filter:
+  enabled: false
+
+proxy:
+  enabled: false
+
+captcha:
+  enabled: false
+
+flaresolverr:
+  enabled: false
+
+dedupe:
+  enabled: false
+  hash_file: "output/test-runs/dedupe_hashes.jsonl"
+
+logging:
+  level: "INFO"
+  log_file: "logs/job_bot_{timestamp}.log"

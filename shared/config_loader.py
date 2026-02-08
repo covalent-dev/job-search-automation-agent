@@ -219,6 +219,41 @@ class ConfigLoader:
     def get_detail_description_delay_max(self) -> float:
         """Get maximum delay between detail description fetches in seconds"""
         return float(self.get('search.detail_description_delay_max', 2.0))
+
+    # === LinkedIn Detail Queue Config ===
+
+    def is_detail_queue_enabled(self) -> bool:
+        """Check if queued detail fetching is enabled"""
+        return bool(self.get('search.detail_queue.enabled', False))
+
+    def get_detail_queue_concurrency(self) -> int:
+        """Get worker count for queued detail fetches"""
+        return int(self.get('search.detail_queue.concurrency', 2))
+
+    def get_detail_queue_max_attempts(self) -> int:
+        """Get max attempts per queued detail fetch"""
+        return int(self.get('search.detail_queue.max_attempts', 3))
+
+    def get_detail_queue_retry_schedule_seconds(self) -> list[int]:
+        """Get retry schedule for queued detail fetches"""
+        raw = self.get('search.detail_queue.retry_schedule_seconds', [60, 300, 900]) or []
+        if not isinstance(raw, list):
+            return [60, 300, 900]
+        values: list[int] = []
+        for value in raw:
+            try:
+                values.append(int(value))
+            except Exception:
+                continue
+        return values or [60, 300, 900]
+
+    def get_detail_queue_jitter_seconds(self) -> int:
+        """Get jitter added to detail queue retries"""
+        return int(self.get('search.detail_queue.jitter_seconds', 10))
+
+    def get_detail_queue_max_total_wait_seconds(self) -> int:
+        """Get upper bound for total queue retry wait"""
+        return int(self.get('search.detail_queue.max_total_wait_seconds', 900))
     
     def get_job_boards(self) -> List[str]:
         """Get list of job boards to search"""
@@ -339,6 +374,33 @@ class ConfigLoader:
 
     def flaresolverr_enabled(self) -> bool:
         return bool(self.get("flaresolverr.enabled", False))
+
+    # === Runtime Metrics Config ===
+
+    def is_metrics_enabled(self) -> bool:
+        """Check if run metrics capture is enabled"""
+        return bool(self.get('metrics.enabled', False))
+
+    def is_metrics_events_enabled(self) -> bool:
+        """Check if detailed metrics events should be recorded"""
+        return bool(self.get('metrics.include_events', True))
+
+    def get_metrics_output_file(self) -> str:
+        """Get run metrics output file template"""
+        return str(self.get('metrics.output_file', 'output/run_metrics_{timestamp}.json'))
+
+    # === Captcha / Notification Behavior ===
+
+    def get_captcha_on_detect(self) -> str:
+        """Get action to take when captcha is detected"""
+        value = str(self.get('captcha.on_detect', 'skip')).strip().lower()
+        if value not in {'abort', 'skip', 'pause'}:
+            return 'skip'
+        return value
+
+    def is_notifications_enabled(self) -> bool:
+        """Check whether desktop notifications are enabled"""
+        return bool(self.get('notifications.enabled', False))
     
     # === AI Config ===
     
