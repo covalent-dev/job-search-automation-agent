@@ -1,0 +1,75 @@
+# LinkedIn production-shape soak (no-proxy baseline)
+search:
+  keywords:
+    - "AI engineer"
+    - "AI/ML engineer"
+    - "LLM engineer"
+  location: "Remote"
+  max_results_per_search: 25
+  max_pages: 3
+  detail_salary_fetch: true
+  detail_salary_timeout: 9
+  detail_salary_retries: 1
+  detail_salary_max_per_query: 0
+  detail_salary_delay_min: 1.5
+  detail_salary_delay_max: 2.5
+  detail_description_fetch: true
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.5
+  detail_description_delay_max: 2.5
+  detail_queue:
+    enabled: true
+    concurrency: 3
+    max_attempts: 3
+    retry_schedule_seconds: [60, 300, 900]
+    jitter_seconds: 10
+    max_total_wait_seconds: 900
+  job_boards:
+    - "linkedin"
+
+output:
+  json_file: "output/test-runs/jobs_soak_production_noproxy_{timestamp}.json"
+  markdown_file: "output/test-runs/jobs_soak_production_noproxy_{timestamp}.md"
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: true
+  min_delay: 1.0
+  max_delay: 2.2
+  page_timeout: 45
+  navigation_timeout: 45
+  launch_timeout: 90
+  max_retries: 1
+  channel: ""
+  executable_path: ""
+  use_stealth: false
+
+metrics:
+  enabled: true
+  output_file: "output/run_metrics_{timestamp}.json"
+  include_events: true
+
+ai_filter:
+  enabled: false
+
+proxy:
+  enabled: false
+
+captcha:
+  enabled: false
+  on_detect: "skip"
+
+flaresolverr:
+  enabled: false
+
+dedupe:
+  enabled: true
+  hash_file: "output/test-runs/dedupe_hashes_soak_production_linkedin.jsonl"
+
+logging:
+  level: "INFO"
+  log_file: "logs/job_bot_{timestamp}.log"
