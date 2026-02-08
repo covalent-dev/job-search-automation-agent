@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
+from proxy_manager import ProxyManager
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ class ConfigLoader:
         self.config_path = Path(config_path)
         self.config: Dict[str, Any] = {}
         self.profile = profile or os.environ.get("JOB_BOT_PROFILE", DEFAULT_PROFILE)
+        self._proxy_manager: Optional[ProxyManager] = None
         self._load()
 
     def _load(self) -> None:
@@ -194,6 +196,10 @@ class ConfigLoader:
         """Check if detail description fetch is enabled"""
         return bool(self.get('search.detail_description_fetch', False))
 
+    def is_detail_company_enabled(self) -> bool:
+        """Check if detail company fetch is enabled"""
+        return bool(self.get('search.detail_company_fetch', False))
+
     def get_detail_description_timeout(self) -> int:
         """Get detail description fetch timeout in seconds"""
         return int(self.get('search.detail_description_timeout', 8))
@@ -283,6 +289,29 @@ class ConfigLoader:
 
     def get_proxy_config(self) -> dict:
         return dict(self.get('proxy', {}) or {})
+
+    def get_proxy_manager_settings(self) -> dict:
+        proxy = self.get_proxy_config()
+        rotate_threshold = int(proxy.get("rotate_on_captcha_consecutive", 0) or 0)
+        return {
+            "enabled": bool(proxy.get("enabled", False)),
+            "provider": (proxy.get("provider") or "http").strip(),
+            "server": (proxy.get("server") or "").strip(),
+            "username": (proxy.get("username") or "").strip(),
+            "password": (proxy.get("password") or "").strip(),
+            "username_template": proxy.get("username_template"),
+            "sticky_session": bool(proxy.get("sticky", True)),
+            "session_scope": (proxy.get("session_scope") or "run").strip() or "run",
+            "pool_size": int(proxy.get("pool_size", 4) or 4),
+            "session_ttl_seconds": int(proxy.get("session_ttl", 1800) or 1800),
+            "rotate_on_captcha": bool(rotate_threshold > 0),
+            "rotate_on_failure": bool(proxy.get("rotate_on_failure", False)),
+        }
+
+    def get_playwright_proxy(self, affinity_key: str = "run") -> Optional[Dict[str, str]]:
+        if self._proxy_manager is None:
+            self._proxy_manager = ProxyManager(self)
+        return self._proxy_manager.get_playwright_proxy(affinity_key)
 
     # === Captcha Solver Config ===
 

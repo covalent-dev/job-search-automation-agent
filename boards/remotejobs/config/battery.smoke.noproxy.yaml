@@ -1,0 +1,43 @@
+search:
+  keywords:
+  - AI engineer
+  location: Remote
+  max_results_per_search: 5
+  max_pages: 1
+  detail_salary_fetch: false
+  detail_company_fetch: false
+  detail_description_fetch: false
+  job_boards:
+  - remotejobs
+output:
+  json_file: output/test-runs/jobs_battery_smoke_noproxy_{timestamp}.json
+  markdown_file: output/test-runs/jobs_battery_smoke_noproxy_{timestamp}.md
+  summary_file: output/test-runs/run_summary_battery_smoke_noproxy_{timestamp}.json
+  config_snapshot_file: output/test-runs/config_snapshot_battery_smoke_noproxy_{timestamp}.yaml
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+browser:
+  headless: true
+  min_delay: 0.5
+  max_delay: 1.5
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  use_stealth: true
+  blocked_fail_fast_seconds: 25
+  job_cards_wait_budget_seconds: 12
+proxy:
+  enabled: false
+captcha:
+  enabled: false
+flaresolverr:
+  enabled: false
+ai_filter:
+  enabled: false
+dedupe:
+  enabled: false
+logging:
+  level: INFO
+  log_file: logs/job_bot_battery_smoke_noproxy_{timestamp}.log
