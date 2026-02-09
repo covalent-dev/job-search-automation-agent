@@ -95,7 +95,7 @@ class JobCollector:
         except Exception:
             logger.debug("metrics.inc failed", exc_info=True)
 
-    def _metrics_event(self, kind: str, **data) -> None:
+    def _metrics_event(self, event_name: str, **data) -> None:
         if not self.metrics:
             return
         try:
@@ -105,7 +105,7 @@ class JobCollector:
         if not include_events:
             return
         try:
-            self.metrics.record_event(kind, **data)
+            self.metrics.record_event(event_name, **data)
         except Exception:
             logger.debug("metrics.record_event failed", exc_info=True)
 
@@ -1505,7 +1505,14 @@ class JobCollector:
                             continue
 
             if attempt >= max_attempts:
-                self._metrics_event("detail_queue_give_up", kind=kind, url=url, attempts=attempt, status=status)
+                # Avoid `kind` kw collision with `_metrics_event`'s event name parameter.
+                self._metrics_event(
+                    "detail_queue_give_up",
+                    detail_kind=kind,
+                    url=url,
+                    attempts=attempt,
+                    status=status,
+                )
                 continue
 
             backoff_index = max(min(attempt - 1, len(retry_schedule) - 1), 0)
@@ -1515,7 +1522,7 @@ class JobCollector:
             heapq.heappush(heap, (next_try, next(seq), task))
             self._metrics_event(
                 "detail_queue_retry_scheduled",
-                kind=kind,
+                detail_kind=kind,
                 url=url,
                 attempt=attempt,
                 delay_seconds=round(base_delay + jitter, 3),
