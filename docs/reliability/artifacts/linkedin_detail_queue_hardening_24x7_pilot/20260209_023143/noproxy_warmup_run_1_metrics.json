@@ -1,0 +1,148 @@
+{
+  "board": "linkedin",
+  "counters": {
+    "captcha_events_logged": 0,
+    "detail_description_fetches": 0,
+    "detail_salary_fetches": 29,
+    "jobs_collected_total": 70,
+    "jobs_unique": 53,
+    "jobs_with_salary": 37
+  },
+  "duration_seconds": 959.842104,
+  "ended_at": "2026-02-09T02:47:43.526701+00:00",
+  "events": [
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 10,
+      "t": "2026-02-09T02:34:28.025913+00:00",
+      "tasks": 10
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 900.0,
+      "t": "2026-02-09T02:35:11.013063+00:00"
+    },
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 8,
+      "t": "2026-02-09T02:37:09.227290+00:00",
+      "tasks": 8
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 68.742,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:37:12.492019+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4369169249/"
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 65.209,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:37:15.745397+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4353114608/"
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 67.399,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:37:19.044936+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4361680833/"
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 65.789,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:37:22.271608+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4356741329/"
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 67.021,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:37:25.485500+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4363530064/"
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 60.051,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:37:28.725722+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4366963866/"
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 853.402,
+      "t": "2026-02-09T02:38:40.996256+00:00"
+    },
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 3,
+      "t": "2026-02-09T02:41:17.966545+00:00",
+      "tasks": 3
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 68.004,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:41:27.338673+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4368600383/"
+    },
+    {
+      "attempt": 2,
+      "delay_seconds": 300.639,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-09T02:42:38.251132+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4368600383/"
+    },
+    {
+      "attempts": 3,
+      "detail_kind": "salary",
+      "kind": "detail_queue_give_up",
+      "status": "empty",
+      "t": "2026-02-09T02:47:42.035336+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4368600383/"
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 531.357,
+      "t": "2026-02-09T02:47:42.035370+00:00"
+    }
+  ],
+  "extra": {
+    "detail_queue_enabled": true,
+    "headless": true,
+    "proxy_enabled": false,
+    "proxy_provider": "http"
+  },
+  "run_id": "20260209_023143",
+  "started_at": "2026-02-09T02:31:43.684594+00:00"
+}

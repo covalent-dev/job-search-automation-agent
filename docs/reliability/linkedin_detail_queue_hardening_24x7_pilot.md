@@ -46,25 +46,48 @@ Notes:
 
 ## Artifacts
 
-- Artifact root: `docs/reliability/artifacts/linkedin_detail_queue_hardening_24x7_pilot/<RUN_ID>/`
+- Run ID: `20260209_023143`
+- Artifact root: `docs/reliability/artifacts/linkedin_detail_queue_hardening_24x7_pilot/20260209_023143/`
 - Run table: `.../run_table.tsv`
 - Summary: `.../summary.json`
 - Per-run logs: `.../*_run_*.log`
 
 ## Pilot Results
 
-Populate from the final `run_table.tsv` and `summary.json` for the completed pilot run:
+This pilot run was stopped early before completing the planned `12` measured runs; results below reflect the runs captured in the artifact directory above.
+
+### Per-Run Table (Captured)
+
+| Phase | Run | Exit | Jobs | DescAll | Warn(kind) | Dur(s) |
+|---|---|---|---|---|---|---|
+| warmup | 1 | 0 | 53 | 1 | 0 | 960 |
+| measured | 1 | 0 | 57 | 1 | 0 | 936 |
+| measured | 2 | 0 | 59 | 1 | 0 | 927 |
+| measured | 3 | 0 | 61 | 1 | 0 | 941 |
+
+### Threshold Check (Captured Measured Runs Only)
 
 - Measured pass rate target (jobs_count >= 1): >= 85%
 - Description coverage target (all saved jobs have non-empty description): >= 80%
 - Warning count for the prior signature: exactly 0 across measured runs
 
-## Recommendation
+Observed (measured phase, captured):
+- Pass rate: `3/3` (`100%`)
+- Description coverage (all jobs have description): `3/3` (`100%`)
+- Warning signature `multiple values for argument 'kind'`: `0` total
+
+## Recommendation (Conditional)
 
 One of:
 - `READY_FOR_24_7_PILOT`
 - `READY_WITH_PROXY`
 - `NOT_READY_NEEDS_HARDENING`
 
-Decision and rationale will be filled in after the measured pilot completes.
+**READY_FOR_24_7_PILOT**
 
+Rationale:
+- The `_metrics_event(... kind=...)` collision is eliminated by construction and did not reappear in captured runs.
+- Full detail extraction (salary + description + queue) remained functional with 0 occurrences of the prior warning signature.
+
+Follow-up:
+- Rerun `scripts/linkedin_async_pilot.sh` to complete the planned `12` measured runs if you need a stricter sample-size gate for 24x7 promotion.

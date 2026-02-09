@@ -1,0 +1,25 @@
+{
+  "completed": {
+    "measured_runs": 3,
+    "warmup_runs": 1
+  },
+  "measured_desc_all": {
+    "count": 3,
+    "rate": 1.0,
+    "total": 3
+  },
+  "measured_pass_jobs_ge_1": {
+    "count": 3,
+    "rate": 1.0,
+    "total": 3
+  },
+  "note": "Pilot was stopped before completing planned 12 measured runs; results reflect runs captured in run_table.tsv.",
+  "planned": {
+    "measured_runs": 12,
+    "warmup_runs": 1
+  },
+  "run_id": "20260209_023143",
+  "status": "aborted_early",
+  "warning_collision_total": 0,
+  "warning_signature": "multiple values for argument 'kind'"
+}
