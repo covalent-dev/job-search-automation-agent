@@ -1,0 +1,68 @@
+{
+  "board": "linkedin",
+  "counters": {
+    "captcha_events_logged": 0,
+    "detail_description_fetches": 0,
+    "detail_salary_fetches": 23,
+    "jobs_collected_total": 75,
+    "jobs_unique": 59,
+    "jobs_with_salary": 44
+  },
+  "duration_seconds": 565.826995,
+  "ended_at": "2026-02-10T06:04:30.715924+00:00",
+  "events": [
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 13,
+      "t": "2026-02-10T05:57:47.700285+00:00",
+      "tasks": 13
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 900.0,
+      "t": "2026-02-10T05:58:33.921193+00:00"
+    },
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 5,
+      "t": "2026-02-10T06:01:18.853288+00:00",
+      "tasks": 5
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 900.0,
+      "t": "2026-02-10T06:01:34.467125+00:00"
+    },
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 5,
+      "t": "2026-02-10T06:04:14.451518+00:00",
+      "tasks": 5
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 900.0,
+      "t": "2026-02-10T06:04:28.955072+00:00"
+    }
+  ],
+  "extra": {
+    "detail_queue_enabled": true,
+    "headless": true,
+    "proxy_enabled": false,
+    "proxy_provider": "http"
+  },
+  "run_id": "20260210_055504",
+  "started_at": "2026-02-10T05:55:04.888930+00:00"
+}

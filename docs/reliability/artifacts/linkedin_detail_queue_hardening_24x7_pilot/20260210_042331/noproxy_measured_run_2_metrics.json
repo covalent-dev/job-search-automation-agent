@@ -1,0 +1,103 @@
+{
+  "board": "linkedin",
+  "counters": {
+    "captcha_events_logged": 0,
+    "detail_description_fetches": 0,
+    "detail_salary_fetches": 30,
+    "jobs_collected_total": 75,
+    "jobs_unique": 60,
+    "jobs_with_salary": 38
+  },
+  "duration_seconds": 1012.87686,
+  "ended_at": "2026-02-10T05:00:25.472815+00:00",
+  "events": [
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 15,
+      "t": "2026-02-10T04:46:16.901954+00:00",
+      "tasks": 15
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 68.559,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-10T04:47:06.715747+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4354761047/"
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 834.662,
+      "t": "2026-02-10T04:48:18.411708+00:00"
+    },
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 6,
+      "t": "2026-02-10T04:51:02.883404+00:00",
+      "tasks": 6
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 900.0,
+      "t": "2026-02-10T04:51:23.843537+00:00"
+    },
+    {
+      "concurrency": 3,
+      "description_tasks": 0,
+      "kind": "detail_queue_started",
+      "max_attempts": 3,
+      "salary_tasks": 6,
+      "t": "2026-02-10T04:54:02.540351+00:00",
+      "tasks": 6
+    },
+    {
+      "attempt": 1,
+      "delay_seconds": 65.929,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-10T04:54:05.340958+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4370458888/"
+    },
+    {
+      "attempt": 2,
+      "delay_seconds": 305.829,
+      "detail_kind": "salary",
+      "kind": "detail_queue_retry_scheduled",
+      "status": "empty",
+      "t": "2026-02-10T04:55:14.194601+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4370458888/"
+    },
+    {
+      "attempts": 3,
+      "detail_kind": "salary",
+      "kind": "detail_queue_give_up",
+      "status": "empty",
+      "t": "2026-02-10T05:00:23.175980+00:00",
+      "url": "https://www.linkedin.com/jobs/view/4370458888/"
+    },
+    {
+      "kind": "detail_queue_finished",
+      "remaining": 0,
+      "sleep_budget_seconds": 543.866,
+      "t": "2026-02-10T05:00:23.176001+00:00"
+    }
+  ],
+  "extra": {
+    "detail_queue_enabled": true,
+    "headless": true,
+    "proxy_enabled": false,
+    "proxy_provider": "http"
+  },
+  "run_id": "20260210_044332",
+  "started_at": "2026-02-10T04:43:32.595948+00:00"
+}

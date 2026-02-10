@@ -1,0 +1,86 @@
+# LinkedIn detail-queue hardening pilot (async-style cadence, proxy fallback)
+search:
+  keywords:
+    - "AI engineer"
+    - "AI/ML engineer"
+    - "LLM engineer"
+  location: "Remote"
+  max_results_per_search: 25
+  max_pages: 3
+  detail_salary_fetch: true
+  detail_salary_timeout: 9
+  detail_salary_retries: 1
+  detail_salary_max_per_query: 0
+  detail_salary_delay_min: 1.5
+  detail_salary_delay_max: 2.5
+  detail_description_fetch: true
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.5
+  detail_description_delay_max: 2.5
+  detail_queue:
+    enabled: true
+    concurrency: 3
+    max_attempts: 3
+    retry_schedule_seconds: [60, 300, 900]
+    jitter_seconds: 10
+    max_total_wait_seconds: 900
+  job_boards:
+    - "linkedin"
+
+output:
+  json_file: "output/test-runs/jobs_pilot_async_proxy_{timestamp}.json"
+  markdown_file: "output/test-runs/jobs_pilot_async_proxy_{timestamp}.md"
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: true
+  min_delay: 1.0
+  max_delay: 2.2
+  page_timeout: 45
+  navigation_timeout: 45
+  launch_timeout: 90
+  max_retries: 1
+  channel: ""
+  executable_path: ""
+  use_stealth: false
+
+metrics:
+  enabled: true
+  output_file: "output/test-runs/run_metrics_pilot_async_proxy_{timestamp}.json"
+  include_events: true
+
+ai_filter:
+  enabled: false
+
+proxy:
+  enabled: true
+  provider: "http"
+  server: "${PROXY_SERVER}"
+  username: "${PROXY_USERNAME}"
+  password: "${PROXY_PASSWORD}"
+  sticky: true
+  session_scope: "query"
+  pool_size: 4
+  session_ttl: 1800
+  rotate_on_captcha_consecutive: 2
+  rotate_on_failure: false
+
+captcha:
+  enabled: false
+  on_detect: "skip"
+
+flaresolverr:
+  enabled: false
+
+# See no-proxy pilot config: keep dedupe off for repeatability and clear pass/fail signal.
+dedupe:
+  enabled: false
+
+logging:
+  level: "INFO"
+  log_file: "logs/job_bot_{timestamp}.log"
+

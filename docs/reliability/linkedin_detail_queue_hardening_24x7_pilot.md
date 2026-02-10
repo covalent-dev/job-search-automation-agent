@@ -43,8 +43,11 @@ Notes:
 ## Artifacts
 
 - Prior partial run (historical): `20260209_023143`
-- Full-cadence run (this report): `20260210_013604`
-- Artifact root: `docs/reliability/artifacts/linkedin_detail_queue_hardening_24x7_pilot/20260210_013604/`
+- Full-cadence run (initial verdict): `20260210_013604`
+- Post-fix full-cadence rerun (final verdict): `20260210_042331`
+- Artifact roots:
+  - `docs/reliability/artifacts/linkedin_detail_queue_hardening_24x7_pilot/20260210_013604/`
+  - `docs/reliability/artifacts/linkedin_detail_queue_hardening_24x7_pilot/20260210_042331/`
 - Run table: `.../run_table.tsv`
 - Summary: `.../summary.json`
 - Per-run logs: `.../*_run_*.log`
@@ -118,3 +121,69 @@ Practical next actions before 24x7 promotion:
 1. Make AI dependency loading non-fatal when AI scoring is disabled (or ensure runtime dependency parity for all schedulers/runners).
 2. Re-run full cadence (`1+12`) in a controlled runtime with stable dependencies.
 3. If no-proxy still misses gates, rerun with proxy env vars set to collect `READY_WITH_PROXY` evidence.
+
+---
+
+## Post-Fix Re-Run Results (Run ID `20260210_042331`)
+
+Date: 2026-02-10 (UTC)  
+Artifact root: `docs/reliability/artifacts/linkedin_detail_queue_hardening_24x7_pilot/20260210_042331/`  
+Driver: `bash scripts/linkedin_async_pilot.sh`
+
+### Per-Run Table
+
+| Phase | Run | Exit | Dur(s) | Jobs | DescAll | Warn(kind) | Notes |
+|---|---:|---:|---:|---:|---:|---:|---|
+| warmup | 1 | 0 | 577 | 63 | 1 | 0 | baseline warmup |
+| measured | 1 | 0 | 564 | 62 | 1 | 0 |  |
+| measured | 2 | 0 | 1013 | 60 | 1 | 0 |  |
+| measured | 3 | 0 | 931 | 61 | 1 | 0 |  |
+| measured | 4 | 0 | 566 | 62 | 1 | 0 |  |
+| measured | 5 | 0 | 551 | 60 | 1 | 0 |  |
+| measured | 6 | 0 | 930 | 61 | 1 | 0 |  |
+| measured | 7 | 0 | 566 | 59 | 1 | 0 |  |
+| measured | 8 | 0 | 921 | 60 | 1 | 0 |  |
+| measured | 9 | 0 | 934 | 62 | 1 | 0 |  |
+| measured | 10 | 0 | 934 | 62 | 1 | 0 |  |
+| measured | 11 | 0 | 947 | 61 | 1 | 0 |  |
+| measured | 12 | 0 | 547 | 59 | 1 | 0 |  |
+
+### Gate Evaluation (Measured Runs Only)
+
+Thresholds:
+- Pass rate (`jobs_count >= 1`): `>= 85%`
+- Description coverage (`desc_all`): `>= 80%`
+- Warning signature `multiple values for argument 'kind'`: `0` total
+
+Observed (`12` measured runs):
+- Pass rate: `12/12 = 100.00%` -> **PASS**
+- Description coverage: `12/12 = 100.00%` -> **PASS**
+- Warning signature total: `0` -> **PASS**
+
+### Startup-Failure Signature Check
+
+Search over the new artifact directory for prior startup failure signature:
+- Pattern: `ModuleNotFoundError: No module named 'ollama'`
+- Result: **0 matches**
+
+### Proxy Behavior
+
+Proxy fallback did not execute for this rerun.
+
+Reason:
+- No-proxy measured suite satisfied all gate thresholds.
+- Harness condition for proxy fallback was not triggered.
+
+### Final Recommendation (Non-Conditional, Supersedes Prior Result)
+
+One of:
+- `READY_FOR_24_7_PILOT`
+- `READY_WITH_PROXY`
+- `NOT_READY_NEEDS_HARDENING`
+
+**READY_FOR_24_7_PILOT**
+
+Rationale:
+- All measured runs succeeded (`12/12`), and both measured reliability gates passed with margin (`100%` pass-rate and `100%` desc-all coverage).
+- The detail-queue warning signature remained absent (`0` occurrences).
+- The previous startup failure signature (`ModuleNotFoundError: No module named 'ollama'`) did not recur.
