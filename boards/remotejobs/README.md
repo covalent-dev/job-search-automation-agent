@@ -24,7 +24,11 @@ RemoteJobs is frequently protected by Cloudflare. When blocked, the collector fa
 From repo root:
 
 ```bash
-JOB_BOT_BOARD=remotejobs python3 shared/setup_session.py
+# Recommended (bootstraps .venv automatically):
+./scripts/setup_profile.sh remotejobs
+
+# Alternative:
+# JOB_BOT_BOARD=remotejobs python3 shared/setup_session.py
 ```
 
 Solve the challenge in the opened browser once; the profile is saved under:

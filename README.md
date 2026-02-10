@@ -113,9 +113,12 @@ browser:
 ## Setup
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-playwright install chromium
+# 1. Install dependencies (recommended)
+./scripts/bootstrap_env.sh
+
+# Alternative (system Python / existing venv):
+# pip install -r requirements.txt
+# python -m playwright install chromium
 
 # 2. Set env vars (create .env or export)
 export IPROYAL_USER="..."

@@ -15,9 +15,12 @@ Get up and running with Job Bot in 5 minutes.
 git clone https://github.com/covalent-dev/job-search-automation-agent.git
 cd job-search-automation-agent
 
-# Install dependencies
-pip install -r requirements.txt
-playwright install chromium
+# Recommended: bootstrap a repo-local virtualenv and install deps + Playwright browser
+./scripts/bootstrap_env.sh
+
+# Alternative (system Python / existing venv):
+# pip install -r requirements.txt
+# python -m playwright install chromium
 ```
 
 ## First Run (Per Board)
@@ -27,8 +30,12 @@ Each board requires a one-time browser profile setup to solve the initial captch
 ### 1. Setup Browser Profile
 
 ```bash
-export JOB_BOT_BOARD="glassdoor"
-python3 shared/setup_session.py
+# Recommended (bootstraps .venv automatically):
+./scripts/setup_profile.sh glassdoor
+
+# Alternative:
+# export JOB_BOT_BOARD="glassdoor"
+# python3 shared/setup_session.py
 ```
 
 This opens a browser window. Solve any captcha that appears, then press Enter in the terminal. Your session is now saved and you won't see captchas on future runs.
