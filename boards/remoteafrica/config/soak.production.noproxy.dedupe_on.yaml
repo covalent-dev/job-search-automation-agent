@@ -1,0 +1,47 @@
+# Standardized soak config variant generated from soak.production.noproxy.yaml
+# Mode: dedupe_on (novelty trend)
+search:
+  keywords:
+  - AI engineer
+  location: Remote
+  max_results_per_search: 120
+  max_pages: 4
+  detail_salary_fetch: true
+  detail_salary_max_per_query: 0
+  detail_description_fetch: true
+  detail_description_timeout: 12
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 0.8
+  detail_description_delay_max: 1.6
+  job_boards:
+  - remoteafrica
+output:
+  json_file: output/test-runs/jobs_soak_production_noproxy_{timestamp}.json
+  markdown_file: output/test-runs/jobs_soak_production_noproxy_{timestamp}.md
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+browser:
+  headless: true
+  min_delay: 0.4
+  max_delay: 1.4
+  page_timeout: 45
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  use_stealth: false
+ai_filter:
+  enabled: false
+proxy:
+  enabled: false
+captcha:
+  enabled: false
+flaresolverr:
+  enabled: false
+dedupe:
+  enabled: true
+  hash_file: output/test-runs/soak_production_dedupe_hashes.jsonl
+logging:
+  level: INFO
+  log_file: logs/test-runs/soak_production_noproxy_{timestamp}.log

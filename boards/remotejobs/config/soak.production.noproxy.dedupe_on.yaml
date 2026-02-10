@@ -1,0 +1,60 @@
+# Standardized soak config variant generated from soak.production.noproxy.yaml
+# Mode: dedupe_on (novelty trend)
+search:
+  keywords:
+  - AI engineer
+  - AI/ML engineer
+  - LLM engineer
+  location: Remote
+  max_results_per_search: 60
+  max_pages: 3
+  detail_salary_fetch: true
+  detail_salary_timeout: 10
+  detail_salary_retries: 1
+  detail_salary_max_per_query: 0
+  detail_salary_delay_min: 0.4
+  detail_salary_delay_max: 0.9
+  detail_company_fetch: true
+  detail_description_fetch: true
+  detail_description_timeout: 14
+  detail_description_retries: 1
+  detail_description_max_per_query: 0
+  detail_description_delay_min: 1.8
+  detail_description_delay_max: 3.2
+  job_boards:
+  - remotejobs
+output:
+  json_file: output/test-runs/jobs_soak_production_noproxy_{timestamp}.json
+  markdown_file: output/test-runs/jobs_soak_production_noproxy_{timestamp}.md
+  summary_file: output/test-runs/run_summary_soak_production_noproxy_{timestamp}.json
+  config_snapshot_file: output/test-runs/config_snapshot_soak_production_noproxy_{timestamp}.yaml
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+browser:
+  headless: true
+  min_delay: 0.6
+  max_delay: 1.8
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 2
+  channel: ''
+  executable_path: ''
+  use_stealth: true
+  blocked_fail_fast_seconds: 25
+  job_cards_wait_budget_seconds: 12
+proxy:
+  enabled: false
+captcha:
+  enabled: false
+flaresolverr:
+  enabled: false
+ai_filter:
+  enabled: false
+dedupe:
+  enabled: true
+  hash_file: output/test-runs/dedupe_hashes_soak_production_noproxy.jsonl
+logging:
+  level: INFO
+  log_file: logs/test-runs/soak_production_noproxy_{timestamp}.log
