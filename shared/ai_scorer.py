@@ -1,15 +1,19 @@
 """
-AI Scorer - Local LLM scoring for job descriptions
+AI Scorer - LLM scoring for job descriptions.
+
+Backends:
+- ollama (local)
+- groq (OpenAI-compatible HTTP API)
 """
 
 from __future__ import annotations
 
 import logging
 import json
+import os
 import re
+from urllib import error, request
 from typing import Optional, Tuple, List
-
-import ollama
 
 from models import Job
 
@@ -19,24 +23,28 @@ SCORE_PATTERN = re.compile(r"\b(10|[1-9])\b")
 
 
 class AIScorer:
-    """Scores jobs using a local LLM via Ollama."""
+    """Scores jobs using configured LLM backend."""
 
     def __init__(self, config) -> None:
         self.config = config
+        self.backend = str(config.get_ai_backend() or "ollama").strip().lower()
         self.model = config.get_ai_model()
         self.prompt_template = config.get_ai_prompt()
         self.max_retries = config.get_ai_max_retries()
         self.max_reasoning_chars = config.get_ai_max_reasoning_chars()
         self.debug = config.get_ai_debug()
         self.include_reasoning = config.is_ai_reasoning_enabled()
-        self.available = self._check_ollama()
+        if self.backend not in {"ollama", "groq"}:
+            logger.warning("Unknown AI backend '%s'; falling back to 'ollama'", self.backend)
+            self.backend = "ollama"
+        self.available = self._check_backend()
 
     def score_jobs(self, jobs: List[Job]) -> List[Job]:
         """Score all jobs in-place and return the list."""
         if not jobs:
             return jobs
         if not self.available:
-            logger.warning("AI scoring skipped: Ollama not available")
+            logger.warning("AI scoring skipped: backend '%s' not available", self.backend)
             return jobs
 
         scored = 0
@@ -57,8 +65,7 @@ class AIScorer:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                response = ollama.generate(model=self.model, prompt=prompt)
-                text = (response.get("response") or "").strip()
+                text = self._generate(prompt).strip()
                 if self.debug:
                     logger.debug("AI raw response for %s: %s", job.title, text)
                 score, reasoning = self._parse_response(text)
@@ -70,9 +77,64 @@ class AIScorer:
                     reasoning = None
                 return score, reasoning
             except Exception as exc:
-                logger.warning("AI scoring failed (attempt %s/%s): %s", attempt, self.max_retries, exc)
+                logger.warning(
+                    "AI scoring failed (backend=%s, attempt %s/%s): %s",
+                    self.backend,
+                    attempt,
+                    self.max_retries,
+                    exc,
+                )
 
         return None, None
+
+    def _generate(self, prompt: str) -> str:
+        if self.backend == "groq":
+            return self._generate_groq(prompt)
+        return self._generate_ollama(prompt)
+
+    def _generate_ollama(self, prompt: str) -> str:
+        # Lazy import keeps runs with ai_filter.enabled=false from crashing if dependency
+        # is missing in the active interpreter.
+        import importlib
+
+        ollama = importlib.import_module("ollama")
+        response = ollama.generate(model=self.model, prompt=prompt)
+        return str((response or {}).get("response") or "")
+
+    def _generate_groq(self, prompt: str) -> str:
+        api_key = (os.environ.get("GROQ_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY is not set")
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+        }
+        req = request.Request(
+            url="https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with request.urlopen(req, timeout=45) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+        except error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Groq API HTTP {exc.code}: {details}") from exc
+
+        result = json.loads(body or "{}")
+        choices = result.get("choices") or []
+        if not choices:
+            return ""
+        message = choices[0].get("message") if isinstance(choices[0], dict) else {}
+        if not isinstance(message, dict):
+            return ""
+        return str(message.get("content") or "")
 
     def _build_prompt(self, job: Job) -> str:
         return self.prompt_template.format(
@@ -167,10 +229,29 @@ class AIScorer:
             return None
         return reasoning[: self.max_reasoning_chars]
 
+    def _check_backend(self) -> bool:
+        if self.backend == "groq":
+            return self._check_groq()
+        return self._check_ollama()
+
     def _check_ollama(self) -> bool:
+        try:
+            import importlib
+
+            ollama = importlib.import_module("ollama")
+        except Exception as exc:
+            logger.warning("Ollama module not installed: %s", exc)
+            return False
         try:
             ollama.list()
             return True
         except Exception as exc:
             logger.warning("Ollama not reachable: %s", exc)
             return False
+
+    def _check_groq(self) -> bool:
+        api_key = (os.environ.get("GROQ_API_KEY") or "").strip()
+        if not api_key:
+            logger.warning("Groq backend selected but GROQ_API_KEY is not set")
+            return False
+        return True

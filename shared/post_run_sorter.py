@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from ai_scorer import AIScorer
 from config_loader import ConfigLoader
 from models import Job, SearchQuery, SearchResults
 
@@ -303,6 +302,8 @@ def main() -> None:
         filtered.append(job)
 
     if not args.no_ai and config.is_ai_enabled():
+        from ai_scorer import AIScorer
+
         scorer = AIScorer(config)
         if scorer.available:
             scorer.score_jobs(filtered)

@@ -13,7 +13,6 @@ from datetime import datetime
 from config_loader import load_config
 from models import SearchQuery, SearchResults
 from collector import JobCollector
-from ai_scorer import AIScorer
 from dedupe_store import DedupeStore
 from output_writer import OutputWriter
 
@@ -72,6 +71,7 @@ def display_config(config) -> None:
     print(f"\n🤖 AI FILTER:")
     if config.is_ai_enabled():
         print(f"  ✓ Enabled")
+        print(f"  Backend: {config.get_ai_backend()}")
         print(f"  Model: {config.get_ai_model()}")
     else:
         print(f"  ✗ Disabled")
@@ -179,12 +179,17 @@ def main():
 
     # AI scoring
     if config.is_ai_enabled():
+        from ai_scorer import AIScorer
+
         scorer = AIScorer(config)
         if scorer.available:
             print("🤖 AI scoring enabled: ranking jobs...")
             scorer.score_jobs(jobs)
         else:
-            print("⚠️  AI scoring enabled but Ollama is not available; skipping scoring.")
+            print(
+                f"⚠️  AI scoring enabled but backend '{config.get_ai_backend()}' "
+                "is not available; skipping scoring."
+            )
 
     # Write output
     writer = OutputWriter(config)

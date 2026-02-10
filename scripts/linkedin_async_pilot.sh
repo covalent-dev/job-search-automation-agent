@@ -34,6 +34,28 @@ need_file() {
 need_file "$CFG_NO_PROXY"
 need_file "$CFG_PROXY"
 
+# Load repo .env for proxy fallback checks at harness level. Keep explicit env
+# overrides from caller.
+if [ -f "$REPO_ROOT/.env" ]; then
+  declare -A __PRESERVE_ENV=()
+  for __k in PROXY_SERVER PROXY_HOST PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
+    if [[ -v $__k ]]; then
+      __PRESERVE_ENV["$__k"]="${!__k}"
+    fi
+  done
+
+  set -a
+  # shellcheck disable=SC1090
+  source "$REPO_ROOT/.env"
+  set +a
+
+  for __k in PROXY_SERVER PROXY_HOST PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
+    if [[ -n "${__PRESERVE_ENV[$__k]+x}" ]]; then
+      export "$__k=${__PRESERVE_ENV[$__k]}"
+    fi
+  done
+fi
+
 python3 -m compileall -q shared boards scripts
 python3 scripts/verify_linkedin_metrics_event.py
 
@@ -247,6 +269,10 @@ if float(s["desc_all"]["rate"]) < float(s["desc_all"]["target"]):
 PY
 
 if [ "$need_proxy" -ne 0 ]; then
+  if [ -z "${PROXY_SERVER:-}" ] && [ -n "${PROXY_HOST:-}" ] && [ -n "${PROXY_PORT:-}" ]; then
+    export PROXY_SERVER="http://${PROXY_HOST}:${PROXY_PORT}"
+    echo "proxy_server_derived_from_host_port=1" >> "$ART_DIR/meta.env"
+  fi
   if [ -z "${PROXY_SERVER:-}" ] || [ -z "${PROXY_USERNAME:-}" ] || [ -z "${PROXY_PASSWORD:-}" ]; then
     echo "Proxy fallback indicated but PROXY_* env vars are not set; skipping proxy suite."
     echo "proxy_suite_skipped_missing_env=1" >> "$ART_DIR/meta.env"
