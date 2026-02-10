@@ -1,0 +1,14 @@
+{
+  "desc_all": {
+    "count": 10,
+    "rate": 0.8333333333333334,
+    "target": 0.8
+  },
+  "measured_runs": 12,
+  "pass_jobs_ge_1": {
+    "count": 10,
+    "rate": 0.8333333333333334,
+    "target": 0.85
+  },
+  "warning_collision_total": 0
+}

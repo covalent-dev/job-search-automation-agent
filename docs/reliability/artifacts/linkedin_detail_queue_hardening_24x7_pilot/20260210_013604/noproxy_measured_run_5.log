@@ -1,0 +1,134 @@
+🤖 Running Job Bot: linkedin
+📁 Working dir: /root/covalent-dev/job-search-automation-agent/boards/linkedin
+🐍 Python path: /root/covalent-dev/job-search-automation-agent/boards/linkedin/src:/root/covalent-dev/job-search-automation-agent/shared:
+
+2026-02-10 02:27:34,730 - __main__ - INFO - Logging initialized: logs/job_bot_20260210_022734.log
+2026-02-10 02:27:34,730 - __main__ - INFO - Config validated: 3 search queries configured
+2026-02-10 02:27:34,730 - __main__ - INFO - Created 3 search queries
+2026-02-10 02:27:34,730 - collector - INFO - Starting browser...
+2026-02-10 02:27:35,140 - collector - INFO - Proxy disabled
+2026-02-10 02:27:35,140 - collector - INFO - No persistent profile found, using regular context
+2026-02-10 02:27:35,231 - collector - INFO - Loading session from /root/covalent-dev/job-search-automation-agent/boards/linkedin/config/session.json
+2026-02-10 02:27:35,570 - collector - INFO - Browser started successfully
+2026-02-10 02:27:35,570 - collector - INFO - Searching: 'AI engineer' in Remote (page 1/3)
+2026-02-10 02:28:36,742 - collector - INFO - Found jobs using selector: div.job-card-container
+2026-02-10 02:28:36,754 - collector - INFO - Found 7 job cards
+
+🚀 Starting Job Search Automation...
+
+============================================================
+🤖 JOB SEARCH AUTOMATION v0.1
+============================================================
+
+🎚️  Profile: medium
+
+📋 SEARCH PARAMETERS:
+  1. AI engineer
+  2. AI/ML engineer
+  3. LLM engineer
+
+📍 Location: Remote
+📊 Max results per search: 25
+📄 Max pages per search: 3
+
+⚙️  BROWSER SETTINGS:
+  Headless mode: True
+  Delay range: 1.0s - 2.2s
+  Page timeout: 45.0s
+  Detail salary fetch: True
+
+💾 OUTPUT:
+  JSON: output/test-runs/jobs_pilot_async_noproxy_20260210_022734.json
+  Markdown: output/test-runs/jobs_pilot_async_noproxy_20260210_022734.md
+
+🤖 AI FILTER:
+  ✗ Disabled
+
+============================================================
+
+📝 SEARCH QUERIES:
+  1. 'AI engineer' in Remote
+  2. 'AI/ML engineer' in Remote
+  3. 'LLM engineer' in Remote
+
+============================================================
+🤖 STARTING JOB COLLECTION
+============================================================
+
+🔍 Query 1/3: 'AI engineer' in Remote (page 1/3)
+   Found 7 listings
+   Progress: 1/7   Progress: 2/7   Progress: 3/7   Progress: 4/7   Progress: 5/7   Progress: 6/7   Progress: 7/72026-02-10 02:28:47,083 - collector - INFO - Searching: 'AI engineer' in Remote (page 2/3)
+2026-02-10 02:29:48,505 - collector - INFO - Found jobs using selector: div.job-card-container
+2026-02-10 02:29:51,506 - collector - INFO - Found 19 job cards
+
+   ✓ Collected 7 jobs
+
+🔍 Query 1/3: 'AI engineer' in Remote (page 2/3)
+   Found 19 listings
+   Progress: 1/18   Progress: 2/18   Progress: 3/18   Progress: 4/18   Progress: 5/18   Progress: 6/18   Progress: 7/18   Progress: 8/18   Progress: 9/18   Progress: 10/18   Progress: 11/18   Progress: 12/18   Progress: 13/18   Progress: 14/18   Progress: 15/18   Progress: 16/18   Progress: 17/18   Progress: 18/182026-02-10 02:30:16,619 - collector - INFO - Stopping pagination: reached max_results (25)
+2026-02-10 02:31:25,651 - collector - INFO - Searching: 'AI/ML engineer' in Remote (page 1/3)
+2026-02-10 02:32:27,006 - collector - INFO - Found jobs using selector: div.job-card-container
+2026-02-10 02:32:27,019 - collector - INFO - Found 20 job cards
+
+   ✓ Collected 25 jobs
+
+   🧵 Detail queue: 15 tasks (concurrency=3, attempts=3)
+
+🔍 Query 2/3: 'AI/ML engineer' in Remote (page 1/3)
+   Found 20 listings
+   Progress: 1/20   Progress: 2/20   Progress: 3/20   Progress: 4/20   Progress: 5/20   Progress: 6/20   Progress: 7/20   Progress: 8/20   Progress: 9/20   Progress: 10/20   Progress: 11/20   Progress: 12/20   Progress: 13/20   Progress: 14/20   Progress: 15/20   Progress: 16/20   Progress: 17/20   Progress: 18/20   Progress: 19/20   Progress: 20/202026-02-10 02:32:55,829 - collector - INFO - Searching: 'AI/ML engineer' in Remote (page 2/3)
+2026-02-10 02:33:55,963 - collector - INFO - Found jobs using selector: div.job-card-container
+2026-02-10 02:33:58,966 - collector - INFO - Found 19 job cards
+
+   ✓ Collected 20 jobs
+
+🔍 Query 2/3: 'AI/ML engineer' in Remote (page 2/3)
+   Found 19 listings
+   Progress: 1/5   Progress: 2/5   Progress: 3/5   Progress: 4/5   Progress: 5/52026-02-10 02:34:05,878 - collector - INFO - Stopping pagination: reached max_results (25)
+2026-02-10 02:34:25,653 - collector - INFO - Searching: 'LLM engineer' in Remote (page 1/3)
+2026-02-10 02:35:25,583 - collector - INFO - Found jobs using selector: div.job-card-container
+2026-02-10 02:35:25,595 - collector - INFO - Found 20 job cards
+
+   ✓ Collected 25 jobs
+
+   🧵 Detail queue: 6 tasks (concurrency=3, attempts=3)
+
+🔍 Query 3/3: 'LLM engineer' in Remote (page 1/3)
+   Found 20 listings
+   Progress: 1/20   Progress: 2/20   Progress: 3/20   Progress: 4/20   Progress: 5/20   Progress: 6/20   Progress: 7/20   Progress: 8/20   Progress: 9/20   Progress: 10/20   Progress: 11/20   Progress: 12/20   Progress: 13/20   Progress: 14/20   Progress: 15/20   Progress: 16/20   Progress: 17/20   Progress: 18/20   Progress: 19/20   Progress: 20/202026-02-10 02:35:55,792 - collector - INFO - Searching: 'LLM engineer' in Remote (page 2/3)
+2026-02-10 02:36:55,494 - collector - INFO - Found jobs using selector: div.job-card-container
+2026-02-10 02:36:55,506 - collector - INFO - Found 19 job cards
+
+   ✓ Collected 20 jobs
+
+🔍 Query 3/3: 'LLM engineer' in Remote (page 2/3)
+   Found 19 listings
+   Progress: 1/5   Progress: 2/5   Progress: 3/5   Progress: 4/5   Progress: 5/52026-02-10 02:37:02,853 - collector - INFO - Stopping pagination: reached max_results (25)
+2026-02-10 02:37:23,860 - collector - INFO - Browser closed
+2026-02-10 02:37:23,861 - collector - INFO - Collection complete: 58 unique jobs
+2026-02-10 02:37:23,866 - output_writer - INFO - JSON written: output/test-runs/jobs_pilot_async_noproxy_20260210_023723.json
+2026-02-10 02:37:23,867 - output_writer - INFO - Markdown written: output/test-runs/jobs_pilot_async_noproxy_20260210_023723.md
+2026-02-10 02:37:23,867 - __main__ - INFO - Job search complete: 58 jobs saved
+
+   ✓ Collected 25 jobs
+
+   🧵 Detail queue: 6 tasks (concurrency=3, attempts=3)
+
+📊 Total: 58 unique jobs collected
+📈 Metrics: output/test-runs/run_metrics_pilot_async_noproxy_20260210_023723.json
+============================================================
+
+💾 JSON saved: output/test-runs/jobs_pilot_async_noproxy_20260210_023723.json
+📝 Markdown saved: output/test-runs/jobs_pilot_async_noproxy_20260210_023723.md
+
+============================================================
+✅ JOB SEARCH COMPLETE
+============================================================
+
+📊 Results: 58 jobs collected
+📁 Files:
+   JSON: output/test-runs/jobs_pilot_async_noproxy_20260210_023723.json
+   Markdown: output/test-runs/jobs_pilot_async_noproxy_20260210_023723.md
+
+============================================================
+

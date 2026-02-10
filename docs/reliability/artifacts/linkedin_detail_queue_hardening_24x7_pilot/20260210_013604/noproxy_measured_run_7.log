@@ -1,0 +1,10 @@
+🤖 Running Job Bot: linkedin
+📁 Working dir: /root/covalent-dev/job-search-automation-agent/boards/linkedin
+🐍 Python path: /root/covalent-dev/job-search-automation-agent/boards/linkedin/src:/root/covalent-dev/job-search-automation-agent/shared:
+
+Traceback (most recent call last):
+  File "/root/covalent-dev/job-search-automation-agent/shared/main.py", line 16, in <module>
+    from ai_scorer import AIScorer
+  File "/root/covalent-dev/job-search-automation-agent/shared/ai_scorer.py", line 12, in <module>
+    import ollama
+ModuleNotFoundError: No module named 'ollama'
