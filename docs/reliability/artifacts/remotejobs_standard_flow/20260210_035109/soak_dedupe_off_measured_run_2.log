@@ -1,0 +1,302 @@
+🤖 Running Job Bot: remotejobs
+📁 Working dir: /root/covalent-dev/job-search-automation-agent/boards/remotejobs
+🐍 Python path: /root/covalent-dev/job-search-automation-agent/boards/remotejobs/src:/root/covalent-dev/job-search-automation-agent/shared:
+
+2026-02-10 04:07:38,301 - __main__ - INFO - Logging initialized: logs/test-runs/soak_production_noproxy_20260210_040738.log
+2026-02-10 04:07:38,301 - __main__ - INFO - Config validated: 3 search queries configured
+2026-02-10 04:07:38,301 - __main__ - INFO - Created 3 search queries
+2026-02-10 04:07:38,302 - collector - INFO - Starting browser...
+2026-02-10 04:07:38,606 - collector - INFO - Using persistent profile: /root/.job-search-automation/job-search-automation-remotejobs-profile
+2026-02-10 04:07:38,728 - collector - WARNING - Failed to enable stealth mode: No module named 'playwright_stealth'
+2026-02-10 04:07:38,728 - collector - INFO - Browser started successfully
+2026-02-10 04:07:38,728 - collector - INFO - Searching: 'AI engineer' in Remote (page 1/3)
+2026-02-10 04:07:39,754 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 04:07:46,645 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 04:07:46,645 - collector - INFO - Found 50 job cards
+
+🚀 Starting Job Search Automation...
+
+============================================================
+🤖 JOB SEARCH AUTOMATION v0.1
+============================================================
+
+🎚️  Profile: medium
+
+📋 SEARCH PARAMETERS:
+  1. AI engineer
+  2. AI/ML engineer
+  3. LLM engineer
+
+📍 Location: Remote
+📊 Max results per search: 60
+📄 Max pages per search: 3
+
+⚙️  BROWSER SETTINGS:
+  Headless mode: True
+  Delay range: 0.6s - 1.8s
+  Page timeout: 30.0s
+  Detail salary fetch: True
+
+💾 OUTPUT:
+  JSON: output/test-runs/jobs_soak_production_noproxy_20260210_040738.json
+  Markdown: output/test-runs/jobs_soak_production_noproxy_20260210_040738.md
+
+🤖 AI FILTER:
+  ✗ Disabled
+
+============================================================
+
+📝 SEARCH QUERIES:
+  1. 'AI engineer' in Remote
+  2. 'AI/ML engineer' in Remote
+  3. 'LLM engineer' in Remote
+
+============================================================
+🤖 STARTING JOB COLLECTION
+============================================================
+
+🔍 Query 1/3: 'AI engineer' in Remote (page 1/3)
+   Found 50 listings
+   Progress: 1/50   Detail salary: 1/∞2026-02-10 04:07:47,026 - collector - INFO - Detail salary fetch 1/∞: https://www.remotejobs.io/jobs/open-source-machine-learning-engineer-international-remote-0d7a8933-4b49-8ac9-a9ae-54b79bf1cb75
+
+   Detail description: 1/∞2026-02-10 04:07:49,243 - collector - INFO - Detail description fetch 1/∞: https://www.remotejobs.io/jobs/open-source-machine-learning-engineer-international-remote-0d7a8933-4b49-8ac9-a9ae-54b79bf1cb75
+
+   Progress: 2/50   Detail description: 2/∞2026-02-10 04:07:51,293 - collector - INFO - Detail description fetch 2/∞: https://www.remotejobs.io/jobs/remote-senior-web-engineer-691aecf3-6fba-8886-9530-c57935f042ef
+
+   Progress: 3/50   Detail description: 3/∞2026-02-10 04:07:53,213 - collector - INFO - Detail description fetch 3/∞: https://www.remotejobs.io/jobs/mgr-ii-project-management-engineering-remote-53b74626-355b-8ad2-8bb1-4a7ffd8af698
+
+   Progress: 4/50   Detail salary: 2/∞2026-02-10 04:07:54,956 - collector - INFO - Detail salary fetch 2/∞: https://www.remotejobs.io/jobs/staff-software-engineer-remote-41e624f7-0a94-89d0-8da1-785f82b28fc9
+
+   Detail description: 4/∞2026-02-10 04:07:56,273 - collector - INFO - Detail description fetch 4/∞: https://www.remotejobs.io/jobs/staff-software-engineer-remote-41e624f7-0a94-89d0-8da1-785f82b28fc9
+
+   Progress: 5/50   Detail description: 5/∞2026-02-10 04:07:56,553 - collector - INFO - Detail description fetch 5/∞: https://www.remotejobs.io/jobs/divisional-inpatient-remote-coder-iv-2fd2a706-e8a7-8cd1-ba0d-5615e4df1b08
+
+   Progress: 6/50   Detail description: 6/∞2026-02-10 04:07:58,206 - collector - INFO - Detail description fetch 6/∞: https://www.remotejobs.io/jobs/solutions-architect-reference-architecture-design-remote-e33c7029-6494-8e66-b101-9b09079cce76
+
+   Progress: 7/50   Detail salary: 3/∞2026-02-10 04:08:01,580 - collector - INFO - Detail salary fetch 3/∞: https://www.remotejobs.io/jobs/research-engineer-scientist-ionospheric-physics-remote-sensing-and-in-situ-instrumentation-598125f2-d565-84e3-9bc7-5f0662f165bd
+
+   Detail description: 7/∞2026-02-10 04:08:02,879 - collector - INFO - Detail description fetch 7/∞: https://www.remotejobs.io/jobs/research-engineer-scientist-ionospheric-physics-remote-sensing-and-in-situ-instrumentation-598125f2-d565-84e3-9bc7-5f0662f165bd
+
+   Progress: 8/50   Detail salary: 4/∞2026-02-10 04:08:03,216 - collector - INFO - Detail salary fetch 4/∞: https://www.remotejobs.io/jobs/director-of-remote-sensing-edf1e5e5-2966-8019-8a61-72a6ae40eefa
+
+   Detail description: 8/∞2026-02-10 04:08:04,810 - collector - INFO - Detail description fetch 8/∞: https://www.remotejobs.io/jobs/director-of-remote-sensing-edf1e5e5-2966-8019-8a61-72a6ae40eefa
+
+   Progress: 9/50   Detail description: 9/∞2026-02-10 04:08:05,097 - collector - INFO - Detail description fetch 9/∞: https://www.remotejobs.io/jobs/manager-remote-sales-support-77971530-7b5e-8bc5-bab7-68e937beca0a
+
+   Progress: 10/50   Detail description: 10/∞2026-02-10 04:08:06,903 - collector - INFO - Detail description fetch 10/∞: https://www.remotejobs.io/jobs/senior-site-contracts-manager-sponsor-dedicated-remote-us-based-0899d25b-0aca-8501-8660-3cf65ff4f2fb
+
+   Progress: 11/50   Detail description: 11/∞2026-02-10 04:08:08,601 - collector - INFO - Detail description fetch 11/∞: https://www.remotejobs.io/jobs/associate-director-of-real-world-evidence-sponsor-dedicatedremote-us-c5d65502-7e77-8016-a75a-9540312f0301
+
+   Progress: 12/50   Detail description: 12/∞2026-02-10 04:08:11,299 - collector - INFO - Detail description fetch 12/∞: https://www.remotejobs.io/jobs/associate-director-of-real-world-evidence-sponsor-dedicatedremote-us-198ba9c8-9c25-82ec-959d-22ca5076ff89
+
+   Progress: 13/50   Detail description: 13/∞2026-02-10 04:08:12,972 - collector - INFO - Detail description fetch 13/∞: https://www.remotejobs.io/jobs/associate-director-of-real-world-evidence-sponsor-dedicatedremote-us-424b425c-450c-8513-98d0-96e54034b4d9
+
+   Progress: 14/50   Detail salary: 5/∞2026-02-10 04:08:14,647 - collector - INFO - Detail salary fetch 5/∞: https://www.remotejobs.io/jobs/remote-bilingual-interpreter-cd67ddbe-06f4-8013-9f59-8e5512be000c
+
+   Detail description: 14/∞2026-02-10 04:08:16,297 - collector - INFO - Detail description fetch 14/∞: https://www.remotejobs.io/jobs/remote-bilingual-interpreter-cd67ddbe-06f4-8013-9f59-8e5512be000c
+
+   Progress: 15/50   Detail description: 15/∞2026-02-10 04:08:16,569 - collector - INFO - Detail description fetch 15/∞: https://www.remotejobs.io/jobs/senior-architect-commercial-life-sciences-remote-c61f5411-9bb8-83c2-8bd9-9001ace47e28
+
+   Progress: 16/50   Detail salary: 6/∞2026-02-10 04:08:18,361 - collector - INFO - Detail salary fetch 6/∞: https://www.remotejobs.io/jobs/remote-therapist-california-lcsw-a6df96f1-195c-85cc-9996-fd277eaafda6
+
+   Detail description: 16/∞2026-02-10 04:08:19,999 - collector - INFO - Detail description fetch 16/∞: https://www.remotejobs.io/jobs/remote-therapist-california-lcsw-a6df96f1-195c-85cc-9996-fd277eaafda6
+
+   Progress: 17/50   Detail salary: 7/∞2026-02-10 04:08:20,996 - collector - INFO - Detail salary fetch 7/∞: https://www.remotejobs.io/jobs/remote-therapist-b5372ab9-26ff-8009-9f74-bf7124837f96
+
+   Detail description: 17/∞2026-02-10 04:08:22,505 - collector - INFO - Detail description fetch 17/∞: https://www.remotejobs.io/jobs/remote-therapist-b5372ab9-26ff-8009-9f74-bf7124837f96
+
+   Progress: 18/50   Detail salary: 8/∞2026-02-10 04:08:22,779 - collector - INFO - Detail salary fetch 8/∞: https://www.remotejobs.io/jobs/director-of-physician-recruiting-academics-division-remote-31ec94b8-d57c-8f1b-83bb-69ea59834290
+
+   Detail description: 18/∞2026-02-10 04:08:24,225 - collector - INFO - Detail description fetch 18/∞: https://www.remotejobs.io/jobs/director-of-physician-recruiting-academics-division-remote-31ec94b8-d57c-8f1b-83bb-69ea59834290
+
+   Progress: 19/50   Detail description: 19/∞2026-02-10 04:08:24,488 - collector - INFO - Detail description fetch 19/∞: https://www.remotejobs.io/jobs/remote-bilingual-spanish-interpreters-ny-dc01cedf-26f2-86ad-9452-a1102ea88f35
+
+   Progress: 20/50   Detail salary: 9/∞2026-02-10 04:08:26,211 - collector - INFO - Detail salary fetch 9/∞: https://www.remotejobs.io/jobs/remote-bilingual-interpreter-e933e432-39f6-875e-8ed6-2f23445b7eee
+
+   Detail description: 20/∞2026-02-10 04:08:27,604 - collector - INFO - Detail description fetch 20/∞: https://www.remotejobs.io/jobs/remote-bilingual-interpreter-e933e432-39f6-875e-8ed6-2f23445b7eee
+
+   Progress: 21/50   Detail description: 21/∞2026-02-10 04:08:27,862 - collector - INFO - Detail description fetch 21/∞: https://www.remotejobs.io/jobs/account-executive-clinical-supplies-san-francisco-remote-a534658a-88ff-8dc2-b942-2d26fcda6707
+
+   Progress: 22/50   Detail description: 22/∞2026-02-10 04:08:30,427 - collector - INFO - Detail description fetch 22/∞: https://www.remotejobs.io/jobs/title-express-remote-processor-e3757645-48ce-8101-a46b-b678d7110db4
+
+   Progress: 23/50   Detail description: 23/∞2026-02-10 04:08:32,371 - collector - INFO - Detail description fetch 23/∞: https://www.remotejobs.io/jobs/diagnostic-solutions-executive-commercial-labs-usa-remote-centraleast-e0a3d341-c63d-882b-a949-1b621ee8e681
+
+   Progress: 24/50   Detail description: 24/∞2026-02-10 04:08:33,922 - collector - INFO - Detail description fetch 24/∞: https://www.remotejobs.io/jobs/underwriter-remote-5d8acd19-dc43-80b3-99e3-86b6efb26b31
+
+   Progress: 25/50   Detail description: 25/∞2026-02-10 04:08:35,700 - collector - INFO - Detail description fetch 25/∞: https://www.remotejobs.io/jobs/remote-customer-service-representative-8ddc6199-de9a-884e-86c2-2cbc82c7868f
+
+   Progress: 26/50   Detail description: 26/∞2026-02-10 04:08:37,176 - collector - INFO - Detail description fetch 26/∞: https://www.remotejobs.io/jobs/hotel-regional-director-of-sales-remote-usa-19ea7d8e-44b8-8219-b3a6-94ca2e714c29
+
+   Progress: 27/50   Detail salary: 10/∞2026-02-10 04:08:40,474 - collector - INFO - Detail salary fetch 10/∞: https://www.remotejobs.io/jobs/remote-daytimeevening-neuroradiologist-austin-radiological-association-1f59fed5-86c4-818f-bcbc-ecef24847f1b
+
+   Detail description: 27/∞2026-02-10 04:08:42,202 - collector - INFO - Detail description fetch 27/∞: https://www.remotejobs.io/jobs/remote-daytimeevening-neuroradiologist-austin-radiological-association-1f59fed5-86c4-818f-bcbc-ecef24847f1b
+
+   Progress: 28/50   Detail description: 28/∞2026-02-10 04:08:42,476 - collector - INFO - Detail description fetch 28/∞: https://www.remotejobs.io/jobs/associate-director-business-development-remote-f0e0161e-0247-8cbb-a1a9-355c4c91b866
+
+   Progress: 29/50   Detail salary: 11/∞2026-02-10 04:08:44,523 - collector - INFO - Detail salary fetch 11/∞: https://www.remotejobs.io/jobs/remote-licensed-customer-service-representative-3758bd03-8326-8cd5-b02f-ac6f7a13be3a
+
+   Detail description: 29/∞2026-02-10 04:08:46,256 - collector - INFO - Detail description fetch 29/∞: https://www.remotejobs.io/jobs/remote-licensed-customer-service-representative-3758bd03-8326-8cd5-b02f-ac6f7a13be3a
+
+   Progress: 30/50   Detail salary: 12/∞2026-02-10 04:08:46,493 - collector - INFO - Detail salary fetch 12/∞: https://www.remotejobs.io/jobs/remote-experienced-jackson-hewitt-tax-preparer-f98a403d-f4aa-83b8-af4e-071a9ad1e489
+
+   Detail description: 30/∞2026-02-10 04:08:47,823 - collector - INFO - Detail description fetch 30/∞: https://www.remotejobs.io/jobs/remote-experienced-jackson-hewitt-tax-preparer-f98a403d-f4aa-83b8-af4e-071a9ad1e489
+
+   Progress: 31/50   Detail salary: 13/∞2026-02-10 04:08:48,162 - collector - INFO - Detail salary fetch 13/∞: https://www.remotejobs.io/jobs/remote-accountant-client-services-team-3e698207-304a-8a18-b31a-42180c77fc8e
+
+   Detail description: 31/∞2026-02-10 04:08:49,814 - collector - INFO - Detail description fetch 31/∞: https://www.remotejobs.io/jobs/remote-accountant-client-services-team-3e698207-304a-8a18-b31a-42180c77fc8e
+
+   Progress: 32/50   Detail salary: 14/∞2026-02-10 04:08:51,397 - collector - INFO - Detail salary fetch 14/∞: https://www.remotejobs.io/jobs/experienced-loss-control-consultant-remote-263cdf62-43e3-8949-bf20-787ceefd10f4
+
+   Detail description: 32/∞2026-02-10 04:08:53,024 - collector - INFO - Detail description fetch 32/∞: https://www.remotejobs.io/jobs/experienced-loss-control-consultant-remote-263cdf62-43e3-8949-bf20-787ceefd10f4
+
+   Progress: 33/50   Detail salary: 15/∞2026-02-10 04:08:53,360 - collector - INFO - Detail salary fetch 15/∞: https://www.remotejobs.io/jobs/kunama-remote-telephonic-interpreters-5105bbc4-2fd0-83b8-a5a7-855fa35f3ed4
+
+   Detail description: 33/∞2026-02-10 04:08:54,868 - collector - INFO - Detail description fetch 33/∞: https://www.remotejobs.io/jobs/kunama-remote-telephonic-interpreters-5105bbc4-2fd0-83b8-a5a7-855fa35f3ed4
+
+   Progress: 34/50   Detail salary: 16/∞2026-02-10 04:08:55,193 - collector - INFO - Detail salary fetch 16/∞: https://www.remotejobs.io/jobs/belarusian-remote-telephonic-interpreters-99cf583c-77a5-8a13-8a1f-ebdd42d9d39f
+
+   Detail description: 34/∞2026-02-10 04:08:56,685 - collector - INFO - Detail description fetch 34/∞: https://www.remotejobs.io/jobs/belarusian-remote-telephonic-interpreters-99cf583c-77a5-8a13-8a1f-ebdd42d9d39f
+
+   Progress: 35/50   Detail salary: 17/∞2026-02-10 04:08:56,957 - collector - INFO - Detail salary fetch 17/∞: https://www.remotejobs.io/jobs/nuer-remote-telephonic-interpreters-38e80371-9263-8052-8d91-42def366f842
+
+   Detail description: 35/∞2026-02-10 04:08:58,241 - collector - INFO - Detail description fetch 35/∞: https://www.remotejobs.io/jobs/nuer-remote-telephonic-interpreters-38e80371-9263-8052-8d91-42def366f842
+
+   Progress: 36/50   Detail description: 36/∞2026-02-10 04:08:58,386 - collector - INFO - Detail description fetch 36/∞: https://www.remotejobs.io/jobs/remote-registered-dietitian-or-cns-07ad3681-235b-88b7-a28d-8375ff5af349
+
+   Progress: 37/50   Detail salary: 18/∞2026-02-10 04:09:01,810 - collector - INFO - Detail salary fetch 18/∞: https://www.remotejobs.io/jobs/dayforce-wfm-system-consultant-remote-us-4368467c-c6a0-82da-9faa-eab06806e1ed
+
+   Detail description: 37/∞2026-02-10 04:09:03,669 - collector - INFO - Detail description fetch 37/∞: https://www.remotejobs.io/jobs/dayforce-wfm-system-consultant-remote-us-4368467c-c6a0-82da-9faa-eab06806e1ed
+
+   Progress: 38/50   Detail description: 38/∞2026-02-10 04:09:03,900 - collector - INFO - Detail description fetch 38/∞: https://www.remotejobs.io/jobs/manager-remote-accounting-services-400a646d-bdab-8bac-b79a-f80ab8b3b656
+
+   Progress: 39/50   Detail description: 39/∞2026-02-10 04:09:05,908 - collector - INFO - Detail description fetch 39/∞: https://www.remotejobs.io/jobs/manager-remote-accounting-services-9882966d-b126-855c-b9db-ab8e9e0be711
+
+   Progress: 40/50   Detail description: 40/∞2026-02-10 04:09:07,800 - collector - INFO - Detail description fetch 40/∞: https://www.remotejobs.io/jobs/speech-language-pathologist-spanish-speaking-remote-d4fbb5f4-1ee5-87d3-a704-29ff46417617
+
+   Progress: 41/50   Detail salary: 19/∞2026-02-10 04:09:09,568 - collector - INFO - Detail salary fetch 19/∞: https://www.remotejobs.io/jobs/remote-functional-consultant-oracle-hcm-cloud-988d9fdd-b8d7-808f-b806-e7caa2d7031d
+
+   Detail description: 41/∞2026-02-10 04:09:11,284 - collector - INFO - Detail description fetch 41/∞: https://www.remotejobs.io/jobs/remote-functional-consultant-oracle-hcm-cloud-988d9fdd-b8d7-808f-b806-e7caa2d7031d
+
+   Progress: 42/50   Detail description: 42/∞2026-02-10 04:09:13,326 - collector - INFO - Detail description fetch 42/∞: https://www.remotejobs.io/jobs/remote-insurance-lead-generation-specialist-1662092d-39dc-80b1-b3b6-06d2b3c91f89
+
+   Progress: 43/50   Detail description: 43/∞2026-02-10 04:09:15,426 - collector - INFO - Detail description fetch 43/∞: https://www.remotejobs.io/jobs/remote-school-speech-language-pathologist-adc1a779-2a7a-8523-91d8-cb80371efd22
+
+   Progress: 44/50   Detail description: 44/∞2026-02-10 04:09:17,008 - collector - INFO - Detail description fetch 44/∞: https://www.remotejobs.io/jobs/director-remote-operations-control-center-7ad86ff1-72ff-8c72-9a91-2120dab1185a
+
+   Progress: 45/50   Detail salary: 20/∞2026-02-10 04:09:18,797 - collector - INFO - Detail salary fetch 20/∞: https://www.remotejobs.io/jobs/remote-it-talent-sourcer-0a386eb0-9aac-8b17-b453-c18f1ee7b481
+
+   Detail description: 45/∞2026-02-10 04:09:20,432 - collector - INFO - Detail description fetch 45/∞: https://www.remotejobs.io/jobs/remote-it-talent-sourcer-0a386eb0-9aac-8b17-b453-c18f1ee7b481
+
+   Progress: 46/50   Detail salary: 21/∞2026-02-10 04:09:20,799 - collector - INFO - Detail salary fetch 21/∞: https://www.remotejobs.io/jobs/client-support-specialist-greater-richmond-va-area-remote-42b65157-b1fd-8a03-9110-f22b03da4f2c
+
+   Detail description: 46/∞2026-02-10 04:09:22,111 - collector - INFO - Detail description fetch 46/∞: https://www.remotejobs.io/jobs/client-support-specialist-greater-richmond-va-area-remote-42b65157-b1fd-8a03-9110-f22b03da4f2c
+
+   Progress: 47/50   Detail description: 47/∞2026-02-10 04:09:24,065 - collector - INFO - Detail description fetch 47/∞: https://www.remotejobs.io/jobs/remote-customer-service-representative-99d5900e-2fe0-8b63-84d8-3a087b8bcbab
+
+   Progress: 48/50   Detail description: 48/∞2026-02-10 04:09:25,927 - collector - INFO - Detail description fetch 48/∞: https://www.remotejobs.io/jobs/analyst-program-reporting-remote-canada-a13dc096-2ae3-8b5a-aeac-1bf684ad8b2a
+
+   Progress: 49/50   Detail salary: 22/∞2026-02-10 04:09:27,822 - collector - INFO - Detail salary fetch 22/∞: https://www.remotejobs.io/jobs/remote-bilingual-collections-account-representative-2bea5c96-1c60-8fb6-a1b2-2bf8af50f3a3
+
+   Detail description: 49/∞2026-02-10 04:09:29,273 - collector - INFO - Detail description fetch 49/∞: https://www.remotejobs.io/jobs/remote-bilingual-collections-account-representative-2bea5c96-1c60-8fb6-a1b2-2bf8af50f3a3
+
+   Progress: 50/50   Detail salary: 23/∞2026-02-10 04:09:29,610 - collector - INFO - Detail salary fetch 23/∞: https://www.remotejobs.io/jobs/ambulatory-remote-patient-monitoring-282cc3e5-36a0-891d-8b95-dca74392100f
+
+   Detail description: 50/∞2026-02-10 04:09:30,925 - collector - INFO - Detail description fetch 50/∞: https://www.remotejobs.io/jobs/ambulatory-remote-patient-monitoring-282cc3e5-36a0-891d-8b95-dca74392100f
+2026-02-10 04:09:30,953 - collector - INFO - Searching: 'AI engineer' in Remote (page 2/3)
+2026-02-10 04:09:31,870 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 04:09:38,925 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 04:09:38,925 - collector - INFO - Found 50 job cards
+
+
+   ✓ Collected 50 jobs
+
+🔍 Query 1/3: 'AI engineer' in Remote (page 2/3)
+   Found 50 listings
+   Progress: 1/10   Progress: 2/10   Progress: 3/10   Progress: 4/10   Progress: 5/10   Progress: 6/10   Progress: 7/10   Progress: 8/10   Progress: 9/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/10   Progress: 10/102026-02-10 04:10:05,336 - collector - INFO - No new jobs added on page 2; stopping pagination
+2026-02-10 04:10:06,371 - collector - INFO - Searching: 'AI/ML engineer' in Remote (page 1/3)
+2026-02-10 04:10:07,417 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 04:10:14,668 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 04:10:14,668 - collector - INFO - Found 50 job cards
+
+   ✓ Collected 50 jobs
+
+🔍 Query 2/3: 'AI/ML engineer' in Remote (page 1/3)
+   Found 50 listings
+   Progress: 1/50   Progress: 2/50   Progress: 3/50   Progress: 4/50   Progress: 5/50   Progress: 6/50   Progress: 7/50   Progress: 8/50   Progress: 9/50   Progress: 10/50   Progress: 11/50   Progress: 12/50   Progress: 13/50   Progress: 14/50   Progress: 15/50   Progress: 16/50   Progress: 17/50   Progress: 18/50   Progress: 19/50   Progress: 20/50   Progress: 21/50   Progress: 22/50   Progress: 23/50   Progress: 24/50   Progress: 25/50   Progress: 26/50   Progress: 27/50   Progress: 28/50   Progress: 29/50   Progress: 30/50   Progress: 31/50   Progress: 32/50   Progress: 33/50   Progress: 34/50   Progress: 35/50   Progress: 36/50   Progress: 37/50   Progress: 38/50   Progress: 39/50   Progress: 40/50   Progress: 41/50   Progress: 42/50   Progress: 43/50   Progress: 44/50   Progress: 45/50   Progress: 46/50   Progress: 47/50   Detail description: 1/∞2026-02-10 04:10:40,903 - collector - INFO - Detail description fetch 1/∞: https://www.remotejobs.io/jobs/remote-licensed-practical-nurse-lpn-lvn-27190a0d-27e8-87f6-b095-c1dcec226040
+
+   Progress: 48/50   Progress: 49/50   Detail salary: 1/∞2026-02-10 04:10:43,157 - collector - INFO - Detail salary fetch 1/∞: https://www.remotejobs.io/jobs/remote-senior-automation-tester-media-and-entertainment-3bcfe6b7-dfb3-8701-b266-4098d58b1c4f
+
+   Detail description: 2/∞2026-02-10 04:10:44,887 - collector - INFO - Detail description fetch 2/∞: https://www.remotejobs.io/jobs/remote-senior-automation-tester-media-and-entertainment-3bcfe6b7-dfb3-8701-b266-4098d58b1c4f
+
+   Progress: 50/50   Detail description: 3/∞2026-02-10 04:10:45,140 - collector - INFO - Detail description fetch 3/∞: https://www.remotejobs.io/jobs/remote-licensed-qualified-mental-health-professional-6e722922-2db8-8790-b538-76e43306010f
+2026-02-10 04:10:46,613 - collector - INFO - Searching: 'AI/ML engineer' in Remote (page 2/3)
+2026-02-10 04:10:47,868 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 04:10:54,435 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 04:10:54,436 - collector - INFO - Found 50 job cards
+
+
+   ✓ Collected 3 jobs
+
+🔍 Query 2/3: 'AI/ML engineer' in Remote (page 2/3)
+   Found 50 listings
+   Progress: 1/50   Progress: 2/50   Progress: 3/50   Progress: 4/50   Progress: 5/50   Progress: 6/50   Progress: 7/50   Progress: 8/50   Progress: 9/50   Progress: 10/50   Progress: 11/50   Progress: 12/50   Progress: 13/50   Progress: 14/50   Progress: 15/50   Progress: 16/50   Progress: 17/50   Progress: 18/50   Progress: 19/50   Progress: 20/50   Progress: 21/50   Progress: 22/50   Progress: 23/50   Progress: 24/50   Progress: 25/50   Progress: 26/50   Progress: 27/50   Progress: 28/50   Progress: 29/50   Progress: 30/50   Progress: 31/50   Progress: 32/50   Progress: 33/50   Progress: 34/50   Progress: 35/50   Progress: 36/50   Progress: 37/50   Progress: 38/50   Progress: 39/50   Progress: 40/50   Progress: 41/50   Progress: 42/50   Progress: 43/50   Progress: 44/50   Progress: 45/50   Progress: 46/50   Progress: 47/50   Progress: 48/50   Progress: 49/50   Progress: 50/502026-02-10 04:11:17,397 - collector - INFO - No new jobs added on page 2; stopping pagination
+2026-02-10 04:11:18,015 - collector - INFO - Searching: 'LLM engineer' in Remote (page 1/3)
+2026-02-10 04:11:19,883 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 04:11:25,609 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 04:11:25,610 - collector - INFO - Found 50 job cards
+
+   ✓ Collected 3 jobs
+
+🔍 Query 3/3: 'LLM engineer' in Remote (page 1/3)
+   Found 50 listings
+   Progress: 1/50   Progress: 2/50   Progress: 3/50   Progress: 4/50   Progress: 5/50   Progress: 6/50   Progress: 7/50   Progress: 8/50   Detail description: 1/∞2026-02-10 04:11:30,169 - collector - INFO - Detail description fetch 1/∞: https://www.remotejobs.io/jobs/senior-software-engineer-vllm-inference-6ec2349e-ffd7-8ea2-8bdc-2d10eb4f8e89
+
+   Progress: 9/50   Progress: 10/50   Detail description: 2/∞2026-02-10 04:11:32,249 - collector - INFO - Detail description fetch 2/∞: https://www.remotejobs.io/jobs/staff-software-engineer-llm-expert-df07d1cd-d724-84c8-8296-91cb65599eb8
+
+   Progress: 11/50   Progress: 12/50   Progress: 13/50   Progress: 14/50   Progress: 15/50   Detail description: 3/∞2026-02-10 04:11:35,635 - collector - INFO - Detail description fetch 3/∞: https://www.remotejobs.io/jobs/prompt-engineer-llm-specialist-assistant-vice-president-a714605b-956a-8d6c-a4d8-3a7cfbdcba78
+
+   Progress: 16/50   Progress: 17/50   Progress: 18/50   Detail description: 4/∞2026-02-10 04:11:39,625 - collector - INFO - Detail description fetch 4/∞: https://www.remotejobs.io/jobs/ai-llm-evaluation-and-alignment-software-engineer-d3fbf2c1-4600-8ff4-ac06-6ecfa748dacf
+
+   Progress: 19/50   Detail description: 5/∞2026-02-10 04:11:41,350 - collector - INFO - Detail description fetch 5/∞: https://www.remotejobs.io/jobs/llm-platform-engineer-cbc2181b-39c3-8906-be55-58f0578e18b0
+
+   Progress: 20/50   Progress: 21/50   Progress: 22/50   Progress: 23/50   Progress: 24/50   Progress: 25/50   Detail salary: 1/∞2026-02-10 04:11:46,144 - collector - INFO - Detail salary fetch 1/∞: https://www.remotejobs.io/jobs/senior-full-stack-software-engineer-ai-llm-applications-2b264ea9-a75e-8fec-a4f8-931ec6d0f86f
+
+   Detail description: 6/∞2026-02-10 04:11:47,606 - collector - INFO - Detail description fetch 6/∞: https://www.remotejobs.io/jobs/senior-full-stack-software-engineer-ai-llm-applications-2b264ea9-a75e-8fec-a4f8-931ec6d0f86f
+
+   Progress: 26/50   Progress: 27/50   Progress: 28/50   Progress: 29/50   Progress: 30/50   Detail description: 7/∞2026-02-10 04:11:49,791 - collector - INFO - Detail description fetch 7/∞: https://www.remotejobs.io/jobs/prompt-engineer-llm-specialist-assistant-vice-president-d91083a4-14f4-8c75-b747-f0b0433822e0
+
+   Progress: 31/50   Progress: 32/50   Progress: 33/50   Progress: 34/50   Progress: 35/50   Progress: 36/50   Progress: 37/50   Progress: 38/50   Progress: 39/50   Progress: 40/50   Progress: 41/50   Progress: 42/50   Progress: 43/50   Progress: 44/50   Progress: 45/50   Progress: 46/50   Progress: 47/50   Progress: 48/50   Progress: 49/50   Progress: 50/502026-02-10 04:12:01,536 - collector - INFO - Searching: 'LLM engineer' in Remote (page 2/3)
+2026-02-10 04:12:02,401 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 04:12:08,012 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 04:12:08,012 - collector - INFO - Found 50 job cards
+
+   ✓ Collected 7 jobs
+
+🔍 Query 3/3: 'LLM engineer' in Remote (page 2/3)
+   Found 50 listings
+   Progress: 1/50   Progress: 2/50   Progress: 3/50   Progress: 4/50   Progress: 5/50   Progress: 6/50   Progress: 7/50   Progress: 8/50   Progress: 9/50   Progress: 10/50   Progress: 11/50   Progress: 12/50   Progress: 13/50   Progress: 14/50   Progress: 15/50   Progress: 16/50   Progress: 17/50   Progress: 18/50   Progress: 19/50   Progress: 20/50   Progress: 21/50   Progress: 22/50   Progress: 23/50   Progress: 24/50   Progress: 25/50   Progress: 26/50   Progress: 27/50   Progress: 28/50   Progress: 29/50   Progress: 30/50   Progress: 31/50   Progress: 32/50   Progress: 33/50   Progress: 34/50   Progress: 35/50   Progress: 36/50   Progress: 37/50   Progress: 38/50   Progress: 39/50   Progress: 40/50   Progress: 41/50   Progress: 42/50   Progress: 43/50   Progress: 44/50   Progress: 45/50   Progress: 46/50   Progress: 47/50   Progress: 48/50   Progress: 49/50   Progress: 50/502026-02-10 04:12:34,197 - collector - INFO - No new jobs added on page 2; stopping pagination
+2026-02-10 04:12:35,061 - collector - INFO - Browser closed
+2026-02-10 04:12:35,062 - collector - INFO - Collection complete: 60 unique jobs
+2026-02-10 04:12:35,066 - output_writer - INFO - JSON written: output/test-runs/jobs_soak_production_noproxy_20260210_041235.json
+2026-02-10 04:12:35,068 - output_writer - INFO - Markdown written: output/test-runs/jobs_soak_production_noproxy_20260210_041235.md
+2026-02-10 04:12:35,069 - __main__ - INFO - Job search complete: 60 jobs saved
+
+   ✓ Collected 7 jobs
+
+📊 Total: 60 unique jobs collected
+============================================================
+
+💾 JSON saved: output/test-runs/jobs_soak_production_noproxy_20260210_041235.json
+📝 Markdown saved: output/test-runs/jobs_soak_production_noproxy_20260210_041235.md
+
+============================================================
+✅ JOB SEARCH COMPLETE
+============================================================
+
+📊 Results: 60 jobs collected
+📁 Files:
+   JSON: output/test-runs/jobs_soak_production_noproxy_20260210_041235.json
+   Markdown: output/test-runs/jobs_soak_production_noproxy_20260210_041235.md
+
+============================================================
+

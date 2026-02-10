@@ -1,0 +1,80 @@
+🤖 Running Job Bot: remotejobs
+📁 Working dir: /root/covalent-dev/job-search-automation-agent/boards/remotejobs
+🐍 Python path: /root/covalent-dev/job-search-automation-agent/boards/remotejobs/src:/root/covalent-dev/job-search-automation-agent/shared:
+
+2026-02-10 03:51:21,826 - __main__ - INFO - Logging initialized: logs/job_bot_battery_standard_noproxy_20260210_035121.log
+2026-02-10 03:51:21,826 - __main__ - INFO - Config validated: 1 search queries configured
+2026-02-10 03:51:21,827 - __main__ - INFO - Created 1 search queries
+2026-02-10 03:51:21,827 - collector - INFO - Starting browser...
+2026-02-10 03:51:22,199 - collector - INFO - Using persistent profile: /root/.job-search-automation/job-search-automation-remotejobs-profile
+2026-02-10 03:51:22,347 - collector - WARNING - Failed to enable stealth mode: No module named 'playwright_stealth'
+2026-02-10 03:51:22,347 - collector - INFO - Browser started successfully
+2026-02-10 03:51:22,347 - collector - INFO - Searching: 'AI engineer' in Remote (page 1/2)
+2026-02-10 03:51:23,256 - collector - WARNING - RemoteJobs error page detected; attempting recovery
+2026-02-10 03:51:28,056 - collector - INFO - Found jobs using selector: div[id^='job-card-wrapper-']
+2026-02-10 03:51:28,057 - collector - INFO - Found 50 job cards
+
+🚀 Starting Job Search Automation...
+
+============================================================
+🤖 JOB SEARCH AUTOMATION v0.1
+============================================================
+
+🎚️  Profile: medium
+
+📋 SEARCH PARAMETERS:
+  1. AI engineer
+
+📍 Location: Remote
+📊 Max results per search: 20
+📄 Max pages per search: 2
+
+⚙️  BROWSER SETTINGS:
+  Headless mode: True
+  Delay range: 0.5s - 1.5s
+  Page timeout: 30.0s
+  Detail salary fetch: False
+
+💾 OUTPUT:
+  JSON: output/test-runs/jobs_battery_standard_noproxy_20260210_035121.json
+  Markdown: output/test-runs/jobs_battery_standard_noproxy_20260210_035121.md
+
+🤖 AI FILTER:
+  ✗ Disabled
+
+============================================================
+
+📝 SEARCH QUERIES:
+  1. 'AI engineer' in Remote
+
+============================================================
+🤖 STARTING JOB COLLECTION
+============================================================
+
+🔍 Query 1/1: 'AI engineer' in Remote (page 1/2)
+   Found 50 listings
+   Progress: 1/20   Progress: 2/20   Progress: 3/20   Progress: 4/20   Progress: 5/20   Progress: 6/20   Progress: 7/20   Progress: 8/20   Progress: 9/20   Progress: 10/20   Progress: 11/20   Progress: 12/20   Progress: 13/20   Progress: 14/20   Progress: 15/20   Progress: 16/20   Progress: 17/20   Progress: 18/20   Progress: 19/20   Progress: 20/202026-02-10 03:51:38,658 - collector - INFO - Browser closed
+2026-02-10 03:51:38,659 - collector - INFO - Collection complete: 20 unique jobs
+2026-02-10 03:51:38,661 - output_writer - INFO - JSON written: output/test-runs/jobs_battery_standard_noproxy_20260210_035138.json
+2026-02-10 03:51:38,662 - output_writer - INFO - Markdown written: output/test-runs/jobs_battery_standard_noproxy_20260210_035138.md
+2026-02-10 03:51:38,663 - __main__ - INFO - Job search complete: 20 jobs saved
+
+   ✓ Collected 20 jobs
+
+📊 Total: 20 unique jobs collected
+============================================================
+
+💾 JSON saved: output/test-runs/jobs_battery_standard_noproxy_20260210_035138.json
+📝 Markdown saved: output/test-runs/jobs_battery_standard_noproxy_20260210_035138.md
+
+============================================================
+✅ JOB SEARCH COMPLETE
+============================================================
+
+📊 Results: 20 jobs collected
+📁 Files:
+   JSON: output/test-runs/jobs_battery_standard_noproxy_20260210_035138.json
+   Markdown: output/test-runs/jobs_battery_standard_noproxy_20260210_035138.md
+
+============================================================
+
