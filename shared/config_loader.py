@@ -356,6 +356,18 @@ class ConfigLoader:
     def get_captcha_config(self) -> dict:
         return dict(self.get('captcha', {}) or {})
 
+    def is_captcha_auto_solve_enabled(self) -> bool:
+        """Check whether captcha auto-solving may be attempted."""
+        return bool(self.get('captcha.auto_solve', self.get('captcha.enabled', False)))
+
+    def get_captcha_provider(self) -> str:
+        """Get configured captcha provider."""
+        return str(self.get('captcha.provider', '2captcha') or '2captcha')
+
+    def get_captcha_api_key(self) -> str:
+        """Get configured captcha API key."""
+        return str(self.get('captcha.api_key', '') or '')
+
     # === FlareSolverr Config ===
 
     def get_flaresolverr_config(self) -> dict:

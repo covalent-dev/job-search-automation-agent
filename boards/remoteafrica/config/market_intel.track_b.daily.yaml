@@ -1,0 +1,55 @@
+search:
+  keywords:
+    - AI engineer
+    - AI developer
+    - AI automation engineer
+    - LLM engineer
+    - RAG engineer
+    - AI integration engineer
+    - Python developer AI
+    - Software engineer AI
+  location: Remote
+  max_results_per_search: 20
+  max_pages: 1
+  detail_salary_fetch: false
+  detail_description_fetch: false
+  job_boards:
+    - remoteafrica
+
+output:
+  json_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/raw/remoteafrica_track_b_daily_{timestamp}.json
+  markdown_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/raw/remoteafrica_track_b_daily_{timestamp}.md
+  use_timestamp: true
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: true
+  min_delay: 0.5
+  max_delay: 1.5
+  page_timeout: 30
+  navigation_timeout: 45
+  launch_timeout: 60
+  max_retries: 1
+  use_stealth: false
+
+ai_filter:
+  enabled: false
+
+dedupe:
+  enabled: true
+  hash_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/reports/remoteafrica_dedupe.jsonl
+
+proxy:
+  enabled: false
+
+captcha:
+  enabled: false
+  on_detect: skip
+
+flaresolverr:
+  enabled: false
+
+logging:
+  level: INFO
+  log_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/reports/remoteafrica_daily_{timestamp}.log

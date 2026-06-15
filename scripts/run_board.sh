@@ -29,23 +29,27 @@ export JOB_BOT_BOARD="$BOARD"
 if [ -f "$REPO_ROOT/.env" ]; then
     # Preserve per-run env overrides (the harness sets PROXY_* per run).
     # `.env` should only fill missing values and must not overwrite explicit overrides.
-    declare -A __PRESERVE_ENV=()
-    for __k in PROXY_SERVER PROXY_HOST PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
-        if [[ -v $__k ]]; then
-            __PRESERVE_ENV["$__k"]="${!__k}"
-        fi
-    done
+    __PROXY_SERVER_SET="${PROXY_SERVER+x}"
+    __PROXY_SERVER_VAL="${PROXY_SERVER-}"
+    __PROXY_HOST_SET="${PROXY_HOST+x}"
+    __PROXY_HOST_VAL="${PROXY_HOST-}"
+    __PROXY_PORT_SET="${PROXY_PORT+x}"
+    __PROXY_PORT_VAL="${PROXY_PORT-}"
+    __PROXY_USERNAME_SET="${PROXY_USERNAME+x}"
+    __PROXY_USERNAME_VAL="${PROXY_USERNAME-}"
+    __PROXY_PASSWORD_SET="${PROXY_PASSWORD+x}"
+    __PROXY_PASSWORD_VAL="${PROXY_PASSWORD-}"
 
     set -a
     # shellcheck disable=SC1090
     source "$REPO_ROOT/.env"
     set +a
 
-    for __k in PROXY_SERVER PROXY_HOST PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
-        if [[ -n "${__PRESERVE_ENV[$__k]+x}" ]]; then
-            export "$__k=${__PRESERVE_ENV[$__k]}"
-        fi
-    done
+    [ -n "$__PROXY_SERVER_SET" ] && export PROXY_SERVER="$__PROXY_SERVER_VAL"
+    [ -n "$__PROXY_HOST_SET" ] && export PROXY_HOST="$__PROXY_HOST_VAL"
+    [ -n "$__PROXY_PORT_SET" ] && export PROXY_PORT="$__PROXY_PORT_VAL"
+    [ -n "$__PROXY_USERNAME_SET" ] && export PROXY_USERNAME="$__PROXY_USERNAME_VAL"
+    [ -n "$__PROXY_PASSWORD_SET" ] && export PROXY_PASSWORD="$__PROXY_PASSWORD_VAL"
 fi
 
 # Resolve config path:

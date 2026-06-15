@@ -1,0 +1,52 @@
+search:
+  keywords:
+    - forward deployed engineer
+    - AI solutions engineer
+    - AI implementation engineer
+    - AI integration engineer
+    - applied AI engineer
+  location: United States Remote
+  max_results_per_search: 3
+  max_pages: 1
+  detail_salary_fetch: false
+  detail_description_fetch: true
+  detail_description_max_per_query: 5
+  job_boards:
+    - linkedin
+
+output:
+  json_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/raw/linkedin_track_a_smoke.json
+  markdown_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/raw/linkedin_track_a_smoke.md
+  use_timestamp: false
+  vault_sync:
+    enabled: false
+
+browser:
+  headless: false
+  min_delay: 1.0
+  max_delay: 2.0
+  page_timeout: 20
+  navigation_timeout: 30
+  launch_timeout: 45
+  max_retries: 1
+  use_stealth: false
+
+ai_filter:
+  enabled: false
+
+dedupe:
+  enabled: false
+
+proxy:
+  enabled: false
+
+captcha:
+  enabled: false
+  on_detect: skip
+
+flaresolverr:
+  enabled: false
+
+logging:
+  level: INFO
+  log_file: /Users/taxman/Andromeda/knowledge/career-income/market-intel/runs/2026-06-15-one-week-collection/reports/linkedin_smoke_{timestamp}.log
