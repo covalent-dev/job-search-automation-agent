@@ -12,6 +12,11 @@ search:
   - RAG engineer
   - generative AI engineer
   - AI automation engineer
+  - FDE
+  - forward deployed engineer
+  - AI solutions engineer
+  - AI integration engineer
+  - applied AI engineer
   location: Remote
   max_results_per_search: 10
   max_pages: 2
@@ -29,6 +34,43 @@ search:
   detail_description_delay_max: 2.5
   job_boards:
   - indeed
+  tracked_sources:
+  - name: Anthropic careers
+    category: company-careers
+    url: https://www.anthropic.com/careers
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
+  - name: OpenAI Deployment Company
+    category: deployment-company
+    url: https://openai.com/index/openai-launches-the-deployment-company/
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
+  - name: Tomoro careers
+    category: company-careers
+    url: https://tomoro.ai/careers
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
+  - name: Google Cloud FDE postings
+    category: company-careers
+    url: https://www.google.com/about/careers/applications/jobs/results/?q=forward%20deployed%20engineer
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
 output:
   json_file: output/jobs_{timestamp}.json
   markdown_file: output/jobs_{timestamp}.md
@@ -98,6 +140,11 @@ post_run:
   - ai systems
   - ai infrastructure
   - ai platform
+  - fde
+  - forward deployed engineer
+  - ai solutions engineer
+  - ai integration engineer
+  - applied ai engineer
   title_role_keywords:
   - engineer
   - scientist
@@ -109,6 +156,11 @@ post_run:
   - llm
   - nlp
   - vision
+  - fde
+  - forward deployed engineer
+  - solutions engineer
+  - integration engineer
+  - applied ai engineer
   exclude_keywords:
   - director
   - vp

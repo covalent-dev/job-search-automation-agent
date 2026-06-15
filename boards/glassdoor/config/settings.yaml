@@ -1,6 +1,11 @@
 search:
   keywords:
   - AI engineer
+  - FDE
+  - forward deployed engineer
+  - AI solutions engineer
+  - AI integration engineer
+  - applied AI engineer
 #  - AI engineer
 #  - AI/ML engineer
 #  - machine learning engineer
@@ -34,6 +39,43 @@ search:
   detail_description_delay_max: 2.5
   job_boards:
   - glassdoor
+  tracked_sources:
+  - name: Anthropic careers
+    category: company-careers
+    url: https://www.anthropic.com/careers
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
+  - name: OpenAI Deployment Company
+    category: deployment-company
+    url: https://openai.com/index/openai-launches-the-deployment-company/
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
+  - name: Tomoro careers
+    category: company-careers
+    url: https://tomoro.ai/careers
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
+  - name: Google Cloud FDE postings
+    category: company-careers
+    url: https://www.google.com/about/careers/applications/jobs/results/?q=forward%20deployed%20engineer
+    role_focus:
+    - forward deployed engineer
+    - ai solutions engineer
+    - ai integration engineer
+    - applied ai engineer
+    - fde
 output:
   json_file: output/jobs_{timestamp}.json
   markdown_file: output/jobs_{timestamp}.md
@@ -91,6 +133,11 @@ ai_filter:
 post_run:
   include_keywords:
   - AI engineer
+  - fde
+  - forward deployed engineer
+  - ai solutions engineer
+  - ai integration engineer
+  - applied ai engineer
 #  - ai
 #  - ml
 #  - machine learning
@@ -107,6 +154,11 @@ post_run:
 #  - ai platform
   title_role_keywords:
   - AI engineer
+  - fde
+  - forward deployed engineer
+  - solutions engineer
+  - integration engineer
+  - applied ai engineer
 #  - engineer
 #  - scientist
 #  - research
