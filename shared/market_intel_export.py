@@ -95,14 +95,60 @@ PROOF_TERMS = [
     "technical assessment",
 ]
 
+# Title-level seniority cues. Matched against the job TITLE only — description
+# prose ("work with senior engineers") otherwise creates false positives.
 SENIORITY_PATTERNS = [
     ("principal", r"\bprincipal\b"),
     ("staff", r"\bstaff\b"),
-    ("senior", r"\bsenior|sr\.\b"),
+    ("senior", r"\b(senior|sr)\b"),
     ("lead", r"\blead\b"),
-    ("junior", r"\bjunior|entry[- ]level|new grad\b"),
-    ("mid", r"\bmid[- ]level\b"),
+    ("junior", r"\b(junior|jr|entry[ -]level|new[ -]grad|associate|intern)\b"),
+    ("mid", r"\b(mid[ -]level|intermediate)\b"),
 ]
+
+# Section markers that begin the "nice to have / preferred / bonus" zone.
+PREFERRED_MARKERS = [
+    "nice to have",
+    "nice-to-have",
+    "nice to haves",
+    "preferred qualification",
+    "preferred qualifications",
+    "preferred skills",
+    "preferred:",
+    "bonus points",
+    "bonus:",
+    "would be a plus",
+    "good to have",
+    "pluses",
+]
+
+
+def _compile_terms(terms: Iterable[str]) -> list[tuple[str, "re.Pattern[str]"]]:
+    # Word-ish boundaries via lookarounds (not \b) so terms with internal
+    # punctuation like "ci/cd" still match, while "rag" no longer hits inside
+    # "storage" and "react" no longer hits inside "reactive".
+    return [
+        (term, re.compile(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])"))
+        for term in terms
+    ]
+
+
+SKILL_PATTERNS = _compile_terms(SKILL_TERMS)
+DELIVERABLE_PATTERNS = _compile_terms(DELIVERABLE_TERMS)
+PROOF_PATTERNS = _compile_terms(PROOF_TERMS)
+
+
+def split_required_preferred(description: str) -> tuple[str, str]:
+    """Split a description into (required_zone, preferred_zone) at the first
+    'nice to have / preferred / bonus' marker. Text before the marker is treated
+    as required, text after as preferred. Returns the whole description as
+    required when no marker is present."""
+    lower = description.lower()
+    indices = [idx for idx in (lower.find(m) for m in PREFERRED_MARKERS) if idx != -1]
+    if not indices:
+        return description, ""
+    cut = min(indices)
+    return description[:cut], description[cut:]
 
 
 def load_results(path: Path) -> SearchResults:
@@ -118,18 +164,17 @@ def normalize_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
-def match_terms(text: str, terms: Iterable[str]) -> list[str]:
+def match_terms(text: str, compiled: Iterable[tuple[str, "re.Pattern[str]"]]) -> list[str]:
     lower = text.lower()
-    matches: list[str] = []
-    for term in terms:
-        if term in lower:
-            matches.append(term)
-    return sorted(set(matches))
+    return sorted({term for term, pattern in compiled if pattern.search(lower)})
 
 
-def infer_seniority(text: str) -> str:
-    lower = text.lower()
-    year_match = re.search(r"\b(1[0-5]|[2-9])\+?\s+years?\b", lower)
+def infer_seniority(title: str, text: str) -> str:
+    # 1) Years-of-experience requirement is the strongest signal. Use the LOWER
+    #    bound of any range: "3-5 years" -> 3, "5+ years" -> 5, "2 years" -> 2.
+    year_match = re.search(
+        r"\b(\d{1,2})\s*(?:\+|-|–|to)?\s*(?:\d{1,2})?\s*years?\b", text.lower()
+    )
     if year_match:
         years = int(year_match.group(1))
         if years >= 10:
@@ -138,8 +183,11 @@ def infer_seniority(text: str) -> str:
             return "senior"
         if years >= 2:
             return "mid"
+        return "junior"
+    # 2) Fall back to seniority cues in the TITLE only (description prose is noisy).
+    title_lower = title.lower()
     for label, pattern in SENIORITY_PATTERNS:
-        if re.search(pattern, lower):
+        if re.search(pattern, title_lower):
             if label in {"principal", "staff"}:
                 return "senior_out_of_reach"
             return label
@@ -173,7 +221,15 @@ def normalize_job(args: argparse.Namespace, job: Job) -> dict:
     location = normalize_text(job.location)
     link = str(job.link) if job.link else ""
     index_text = " ".join([title, company, location, description])
-    skills = match_terms(index_text, SKILL_TERMS)
+
+    required_desc, preferred_desc = split_required_preferred(description)
+    required_zone = " ".join([title, company, location, required_desc])
+    required_skills = match_terms(required_zone, SKILL_PATTERNS)
+    preferred_skills = [
+        skill
+        for skill in match_terms(preferred_desc, SKILL_PATTERNS)
+        if skill not in required_skills
+    ]
 
     return {
         "run_id": args.run_id,
@@ -187,13 +243,13 @@ def normalize_job(args: argparse.Namespace, job: Job) -> dict:
         "location": location,
         "posting_date": job.date_posted,
         "compensation": job.salary,
-        "required_skills": skills,
-        "preferred_skills": [],
-        "deliverable_signals": match_terms(index_text, DELIVERABLE_TERMS),
-        "proof_signals": match_terms(index_text, PROOF_TERMS),
+        "required_skills": required_skills,
+        "preferred_skills": preferred_skills,
+        "deliverable_signals": match_terms(index_text, DELIVERABLE_PATTERNS),
+        "proof_signals": match_terms(index_text, PROOF_PATTERNS),
         "application_channel": infer_application_channel(job.source or args.board, link),
         "engagement_type": infer_engagement_type(index_text),
-        "seniority": infer_seniority(index_text),
+        "seniority": infer_seniority(title, index_text),
         "signal_only": args.signal_only,
         "source_quality": args.source_quality,
         "description": description,
