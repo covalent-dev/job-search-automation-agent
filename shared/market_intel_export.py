@@ -128,7 +128,9 @@ def _compile_terms(terms: Iterable[str]) -> list[tuple[str, "re.Pattern[str]"]]:
     # punctuation like "ci/cd" still match, while "rag" no longer hits inside
     # "storage" and "react" no longer hits inside "reactive".
     return [
-        (term, re.compile(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])"))
+        # Optional trailing "s" so plurals match ("workflows", "integrations")
+        # while internal boundaries still reject substrings ("rag" in "leverage").
+        (term, re.compile(rf"(?<![a-z0-9]){re.escape(term)}s?(?![a-z0-9])"))
         for term in terms
     ]
 
