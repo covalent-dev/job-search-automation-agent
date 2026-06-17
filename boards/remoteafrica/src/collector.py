@@ -25,11 +25,13 @@ PROFILE_ROOT = Path.home() / ".job-search-automation"
 # Match the profile naming used by setup_session.py
 USER_DATA_DIR = PROFILE_ROOT / f"job-search-automation-{REPO_NAME}-profile"
 REMOTEAFRICA_BASE_URL = "https://remote4africa.com/jobs"
+REMOTEAFRICA_SEARCH_URL = "https://remote4africa.com/jobs/search"
 
 # Non-job slugs that appear under /jobs/ but aren't job listings
 REMOTEAFRICA_DENYLIST_SLUGS = frozenset({
     "plans", "pricing", "about", "contact", "login", "signup",
     "register", "faq", "help", "terms", "privacy", "categories",
+    "search",
 })
 
 
@@ -83,12 +85,12 @@ class JobCollector:
     def _build_search_url(self, query: SearchQuery, page_index: int = 0) -> str:
         """Build search URL for job board"""
         if "remoteafrica" in self.config.get_job_boards():
-            # Remote4Africa uses ?query= for keyword search and ?page= for pagination
+            # Remote4Africa's live search UI uses /jobs/search?q=... with page-based pagination.
             from urllib.parse import quote_plus
             keyword = quote_plus(query.keyword)
             if page_index <= 0:
-                return f"{REMOTEAFRICA_BASE_URL}?query={keyword}"
-            return f"{REMOTEAFRICA_BASE_URL}?query={keyword}&page={page_index + 1}"
+                return f"{REMOTEAFRICA_SEARCH_URL}?q={keyword}"
+            return f"{REMOTEAFRICA_SEARCH_URL}?q={keyword}&page={page_index + 1}"
 
         # Indeed URL structure (legacy)
         keyword = query.keyword.replace(" ", "+")
@@ -289,6 +291,92 @@ class JobCollector:
 
         # No JobPosting JSON-LD found - skip this page (don't create placeholder jobs)
         return None
+
+    def _extract_remoteafrica_card_job(self, anchor, href: str) -> Optional[Job]:
+        """Fallback for Remote4Africa listing cards when detail JSON-LD is unavailable."""
+        try:
+            text = anchor.evaluate(
+                """node => {
+                    const ownHref = node.getAttribute("href") || "";
+                    let best = "";
+                    let current = node;
+                    for (let depth = 0; current && depth < 10; depth += 1) {
+                        const raw = (current.innerText || current.textContent || "").trim();
+                        const text = raw.replace(/\\s+/g, " ");
+                        if (!text || text.length > 900) {
+                            current = current.parentElement;
+                            continue;
+                        }
+                        const hasOwnLink = Array.from(current.querySelectorAll("a[href]"))
+                            .some(a => (a.getAttribute("href") || "") === ownHref);
+                        const looksLikeJobCard =
+                            text.includes("100% Remote") ||
+                            /\\b(fulltime|part-time|contract|freelance)\\b/i.test(text) ||
+                            /\\b(Global|Nigeria|South Africa|Egypt|Kenya|Ghana)\\b/i.test(text);
+                        if (hasOwnLink && looksLikeJobCard && text.length > best.length) {
+                            best = text;
+                        }
+                        current = current.parentElement;
+                    }
+                    return best || (node.innerText || node.textContent || "").trim();
+                }"""
+            )
+        except Exception:
+            text = ""
+
+        lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+        compact = " ".join(lines) if lines else (text or "").strip()
+        if not compact:
+            return None
+
+        title = self._extract_text(anchor)
+        if not title:
+            title = lines[0] if lines else compact[:120]
+        title = " ".join(title.split()).strip()
+        if not title or len(title) < 3:
+            return None
+
+        company = "Unknown Company"
+        company_match = re.search(
+            r"([A-Za-z0-9&/.,+() -]+ Company)\s*(?:🔒|100% Remote|fulltime|part-time|contract|freelance|$)",
+            compact,
+        )
+        if company_match:
+            company = company_match.group(1).strip()
+
+        location = "Remote (Africa)"
+        known_locations = [
+            "Global", "Nigeria", "South Africa", "Egypt", "Kenya", "Ghana",
+            "Ethiopia", "Argentina", "United Kingdom", "Mexico", "Portugal",
+        ]
+        found_locations = [loc for loc in known_locations if re.search(rf"\b{re.escape(loc)}\b", compact)]
+        if found_locations:
+            location = f"Remote ({', '.join(found_locations[:4])})"
+            if len(found_locations) > 4:
+                location += f" +{len(found_locations) - 4} more"
+
+        salary, job_type = self._classify_attribute_text(compact)
+
+        date_posted = None
+        date_match = re.search(r"\b(?:New|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(?:\d{1,2})?\b", compact)
+        if date_match:
+            date_posted = date_match.group(0).strip()
+
+        description = compact
+        if len(description) > 500:
+            description = description[:497].rstrip() + "..."
+
+        return Job(
+            title=title,
+            company=company,
+            location=location,
+            link=href,
+            description=description,
+            salary=salary,
+            job_type=job_type,
+            date_posted=date_posted,
+            source="remoteafrica",
+        )
 
     def _extract_text(self, element) -> str:
         if not element:
@@ -1274,7 +1362,7 @@ class JobCollector:
             self._random_delay()
 
             anchors = self.page.query_selector_all("a[href*='/jobs/']")
-            links = []
+            listing_candidates = []
             for anchor in anchors:
                 href = anchor.get_attribute("href") or ""
                 if not href or href.startswith("#"):
@@ -1294,16 +1382,17 @@ class JobCollector:
                     continue
                 if href.startswith("/") and not href.startswith("//"):
                     href = f"https://remote4africa.com{href}"
-                links.append(href)
+                fallback_job = self._extract_remoteafrica_card_job(anchor, href)
+                listing_candidates.append((href, fallback_job))
 
-            unique_links = []
-            for href in links:
+            unique_listings = []
+            for href, fallback_job in listing_candidates:
                 if href in seen_links:
                     continue
                 seen_links.add(href)
-                unique_links.append(href)
+                unique_listings.append((href, fallback_job))
 
-            if not unique_links:
+            if not unique_listings:
                 Path("output").mkdir(parents=True, exist_ok=True)
                 self.page.screenshot(path="output/debug_screenshot.png")
                 Path("output/debug_page.html").write_text(self.page.content(), encoding="utf-8")
@@ -1311,12 +1400,15 @@ class JobCollector:
                 print("   ⚠️  No job links found - saved debug page")
                 break
 
-            print(f"   Found {len(unique_links)} listings")
-            for i, link in enumerate(unique_links, 1):
+            print(f"   Found {len(unique_listings)} listings")
+            for i, (link, fallback_job) in enumerate(unique_listings, 1):
                 if len(jobs) >= query.max_results:
                     break
-                print(f"\r   Progress: {i}/{len(unique_links)}", end="", flush=True)
+                print(f"\r   Progress: {i}/{len(unique_listings)}", end="", flush=True)
                 job = self._extract_job_from_detail(link)
+                if not job and fallback_job:
+                    logger.info("Using Remote4Africa listing-card fallback for %s", link)
+                    job = fallback_job
                 if job:
                     jobs.append(job)
                 if i % 5 == 0:

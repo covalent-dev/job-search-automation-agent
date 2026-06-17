@@ -1,16 +1,18 @@
 search:
   keywords:
-    - AI engineer
-    - AI developer
-    - AI automation engineer
-    - LLM engineer
-    - RAG engineer
-    - AI integration engineer
-    - Python developer AI
-    - Software engineer AI
+    - ML Engineer
+    - AI Engineer
+    - Machine Learning Engineer
+    - AI Automation
+    - Data Engineer
+    - MLOps Engineer
+    - Python Developer
+    - Full Stack AI Engineer
+    - AI Product Manager
+    - Implementation Engineer
   location: Remote
   max_results_per_search: 20
-  max_pages: 1
+  max_pages: 2
   detail_salary_fetch: false
   detail_description_fetch: false
   job_boards:
