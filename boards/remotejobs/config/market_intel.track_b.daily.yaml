@@ -1,19 +1,18 @@
 search:
   keywords:
-    - AI engineer
-    - AI developer
     - AI automation engineer
-    - LLM engineer
-    - RAG engineer
+    - AI workflow automation
+    - agentic AI engineer
+    - AI agents engineer
+    - AI code generation engineer
     - AI integration engineer
-    - Python developer AI
-    - Software engineer AI
+    - AI native infrastructure engineer
   location: Remote
-  max_results_per_search: 10
+  max_results_per_search: 8
   max_pages: 1
   detail_salary_fetch: false
   detail_description_fetch: true
-  detail_description_max_per_query: 10
+  detail_description_max_per_query: 8
   job_boards:
     - remotejobs
 

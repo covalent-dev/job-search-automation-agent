@@ -47,7 +47,7 @@ BOARD_START_URLS = {
     "glassdoor": "https://www.glassdoor.com/Job/remote-python-developer-jobs-SRCH_IL.0,6_IS11047_KO7,23.htm",
     # NOTE: "remotejobs" board targets remotejobs.io (not remote.co).
     "remotejobs": "https://www.remotejobs.io/remote-jobs?search=python+developer&location=Remote",
-    "remoteafrica": "https://remoteafrica.io/jobs",
+    "remoteafrica": "https://remote4africa.com/jobs",
     "default": "https://www.indeed.com/jobs?q=python+developer&l=Remote",
 }
 
